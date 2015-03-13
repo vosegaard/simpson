@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>IDESourceControlProjectFavoriteDictionaryKey</key>
+	<false/>
+	<key>IDESourceControlProjectIdentifier</key>
+	<string>9C0E151E-25E9-4428-A12A-83EE2C1F2F27</string>
+	<key>IDESourceControlProjectName</key>
+	<string>Simpson-4.1</string>
+	<key>IDESourceControlProjectOriginsDictionary</key>
+	<dict>
+		<key>b71c9ff0-8718-99d4-ebca-40404cc4ab5c++505</key>
+		<string>https://simpson.googlecode.com/svn/trunk</string>
+	</dict>
+	<key>IDESourceControlProjectPath</key>
+	<string>Simpson-4.1/Simpson-4.1.xcodeproj</string>
+	<key>IDESourceControlProjectRelativeInstallPathDictionary</key>
+	<dict>
+		<key>b71c9ff0-8718-99d4-ebca-40404cc4ab5c++505</key>
+		<string>../../..</string>
+	</dict>
+	<key>IDESourceControlProjectRepositoryRootDictionary</key>
+	<dict>
+		<key>b71c9ff0-8718-99d4-ebca-40404cc4ab5c++505</key>
+		<string>https://simpson.googlecode.com/svn</string>
+	</dict>
+	<key>IDESourceControlProjectURL</key>
+	<string>https://simpson.googlecode.com/svn/trunk/Simpson-4.1/Simpson-4.1.xcodeproj</string>
+	<key>IDESourceControlProjectVersion</key>
+	<integer>111</integer>
+	<key>IDESourceControlProjectWCCIdentifier</key>
+	<string>b71c9ff0-8718-99d4-ebca-40404cc4ab5c++505</string>
+	<key>IDESourceControlProjectWCConfigurations</key>
+	<array>
+		<dict>
+			<key>IDESourceControlRepositoryExtensionIdentifierKey</key>
+			<string>public.vcs.subversion</string>
+			<key>IDESourceControlWCCIdentifierKey</key>
+			<string>b71c9ff0-8718-99d4-ebca-40404cc4ab5c++505</string>
+			<key>IDESourceControlWCCName</key>
+			<string>simpson</string>
+		</dict>
+	</array>
+</dict>
+</plist>
