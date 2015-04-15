@@ -66,6 +66,10 @@ ISOTOPE* ss_findisotope(char* name)
     fprintf(stderr,"ss_findisotope: argument must not be NULL\n");
     exit(1);
   }
+    
+  if (*name == 'e') {
+        return &isotopes[0];
+  }
   src=name;
   dst=buf;
     
@@ -81,7 +85,7 @@ ISOTOPE* ss_findisotope(char* name)
   *dst=0;
   number=atoi(buf);
 
-  niso=0;
+  niso=1;
   while (isotopes[niso].number) {
     if (isotopes[niso].number == number) {
       gotnumber=1;
