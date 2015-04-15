@@ -907,7 +907,7 @@ void _pulse(Sim_info *sim, Sim_wsp *wsp, double duration)
 			}
 			update_propagator(wsp->U, wsp->dU, sim, wsp);
 			/* did it fill time up to dw? */
-			if (fabs(wsp->t - wsp->acqblock_t0 - wsp->dw) < TINY ) {
+			if (fabs(wsp->t - wsp->acqblock_t0 - wsp->dw) < TINY*2 ) {
 				_store(sim,wsp,wsp->acqblock_sto,0);
 				wsp->acqblock_t0 = wsp->t;
 				acqblock_sto_incr(wsp);
