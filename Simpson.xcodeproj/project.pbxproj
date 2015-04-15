@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		B1C6AB2719F444A000D788F0 /* libtcl8.6.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = B1C6AB2619F444A000D788F0 /* libtcl8.6.dylib */; };
+		B1A43DC21ADE242A00C8686F /* libtcl8.6.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = B1C6AB2619F444A000D788F0 /* libtcl8.6.dylib */; };
 		B1ECDC9017B505D700F68BD3 /* allocation.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC5417B505D700F68BD3 /* allocation.c */; };
 		B1ECDC9117B505D700F68BD3 /* auxmath.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC5617B505D700F68BD3 /* auxmath.c */; };
 		B1ECDC9217B505D700F68BD3 /* averaging.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC5817B505D700F68BD3 /* averaging.c */; };
@@ -56,7 +56,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		B1C6AB2619F444A000D788F0 /* libtcl8.6.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libtcl8.6.dylib; path = ../../../../../opt/local/lib/libtcl8.6.dylib; sourceTree = "<group>"; };
+		B1C6AB2619F444A000D788F0 /* libtcl8.6.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libtcl8.6.dylib; path = /opt/local/lib/libtcl8.6.dylib; sourceTree = "<absolute>"; };
 		B1ECDC4817B504DF00F68BD3 /* simpson */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = simpson; sourceTree = BUILT_PRODUCTS_DIR; };
 		B1ECDC5417B505D700F68BD3 /* allocation.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = allocation.c; sourceTree = SOURCE_ROOT; };
 		B1ECDC5517B505D700F68BD3 /* arithmetic_ansi.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = arithmetic_ansi.h; sourceTree = SOURCE_ROOT; };
@@ -128,7 +128,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B1C6AB2719F444A000D788F0 /* libtcl8.6.dylib in Frameworks */,
+				B1A43DC21ADE242A00C8686F /* libtcl8.6.dylib in Frameworks */,
 				B1ECDCB017B5061B00F68BD3 /* Accelerate.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
