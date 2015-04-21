@@ -68,7 +68,8 @@ ISOTOPE* ss_findisotope(char* name)
   }
     
   if (*name == 'e') {
-        return &isotopes[0];
+      static ISOTOPE e = {0, "e", 0.5, 17608.59707877};
+      return &e;
   }
   src=name;
   dst=buf;
