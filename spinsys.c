@@ -86,7 +86,7 @@ ISOTOPE* ss_findisotope(char* name)
   *dst=0;
   number=atoi(buf);
 
-  niso=1;
+  niso=0;
   while (isotopes[niso].number) {
     if (isotopes[niso].number == number) {
       gotnumber=1;
