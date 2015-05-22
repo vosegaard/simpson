@@ -635,15 +635,26 @@ void ham_hamilton(Sim_info *s, Sim_wsp *wsp)
 	}
   int i;
   double dw;
-  complx *d20, cdw, zz;
+  complx *d20=NULL, cdw, zz;
   mat_complx *d2=NULL;
 	//LARGE_INTEGER tv1, tv2, tickpsec;
 
 	//QueryPerformanceFrequency(&tickpsec);
 	//QueryPerformanceCounter(&tv1);
   blk_dm_zero(wsp->ham_blk);
-  d20 = wigner20(s->wr*wsp->t*1.0e-6*RAD2DEG+wsp->gamma_add,wsp->brl);
-  if (s->nQ) d2 = wigner2(s->wr*wsp->t*1.0e-6*RAD2DEG+wsp->gamma_add,wsp->brl,0.0);
+  if (s->dor == 1) {
+	  mat_complx *md1, *md2;
+	  md1 = wigner2(s->wr1*wsp->t*1.0e-6*RAD2DEG+wsp->gamma_add,s->brl1,0.0);
+	  md2 = wigner2(s->wr2*wsp->t*1.0e-6*RAD2DEG,s->brl2,0.0);
+	  d2 = cm_mul(md1,md2);
+	  d20 = complx_vector(5);
+	  for (i=1;i<=5;i++) d20[i] = cm_getelem(d2,i,3);
+	  free_complx_matrix(md1);
+	  free_complx_matrix(md2);
+  } else {
+	  d20 = wigner20(s->wr*wsp->t*1.0e-6*RAD2DEG+wsp->gamma_add,wsp->brl);
+	  if (s->nQ) d2 = wigner2(s->wr*wsp->t*1.0e-6*RAD2DEG+wsp->gamma_add,wsp->brl,0.0);
+  }
   
   blk_dm_multod(wsp->ham_blk,wsp->Hiso,1.0);
   if (wsp->Nint_off) {
@@ -794,6 +805,206 @@ void integ(complx* R,double t1,double t2,double wr)
                      R[3] = Complx(t2-t1,0);
   R[4] = Conj(R[2]);
   R[5] = Conj(R[1]);
+}
+
+typedef struct {
+	double times[2], beta[2], wr[2];
+	mat_complx *d2mas, *d2dor1, *d2dor2;
+	int type, Istate;
+	complx *Imas, *Idor;
+	complx *q2a, *q2b, *q3a, *q3b, *q3c, *qcsadd, *qddhomoa, *qddhomob;
+} wigints;
+
+void wigints_init(wigints *p, double t1, double t2, Sim_info *sim, Sim_wsp *wsp)
+{
+	if (p == NULL) {
+		fprintf(stderr,"Error: wigints_init - got NULL pointer\n");
+		exit(1);
+	}
+	p->times[0] = t1;
+	p->times[1] = t2;
+	if (sim->dor == 1) {  // we have DOR
+		p->type = 1;
+		p->beta[0] = sim->brl1;
+		p->beta[1] = sim->brl2;
+		p->wr[0] = sim->wr1;
+		p->wr[1] = sim->wr2;
+	} else {  // we have MAS
+		p->type = 0;
+		p->beta[0] = wsp->brl;
+		p->wr[0] = sim->wr;
+	}
+	p->d2mas = NULL;
+	p->d2dor1 = NULL;
+	p->d2dor2 = NULL;
+	p->Istate = 0;
+	p->Imas = NULL;
+	p->Idor = NULL;
+	p->q2a = NULL;
+	p->q2b = NULL;
+	p->q3a = NULL;
+	p->q3b = NULL;
+	p->q3c = NULL;
+	p->qcsadd = NULL;
+	p->qddhomoa = NULL;
+	p->qddhomob = NULL;
+}
+
+void wigints_destroy(wigints *p)
+{
+	assert(p != NULL);
+	if (p->d2mas != NULL) { free_complx_matrix(p->d2mas); p->d2mas = NULL;}
+	if (p->d2dor1 != NULL) {free_complx_matrix(p->d2dor1); p->d2dor1 = NULL;}
+	if (p->d2dor2 != NULL) {free_complx_matrix(p->d2dor2); p->d2dor2 = NULL;}
+	p->Istate = 0;
+	if (p->Imas != NULL) {free(p->Imas); p->Imas = NULL;}
+	if (p->Idor != NULL) {free(p->Idor); p->Idor = NULL;}
+	if (p->q2a != NULL) {free(p->q2a); p->q2a = NULL;}
+	if (p->q2b != NULL) {free(p->q2b); p->q2b = NULL;}
+	if (p->q3a != NULL) {free(p->q3a); p->q3a = NULL;}
+	if (p->q3b != NULL) {free(p->q3b); p->q3b = NULL;}
+	if (p->q3c != NULL) {free(p->q3c); p->q3c = NULL;}
+	if (p->qcsadd != NULL) {free(p->qcsadd); p->qcsadd = NULL;}
+	if (p->qddhomoa != NULL) {free(p->qddhomoa); p->qddhomoa = NULL;}
+	if (p->qddhomob != NULL) {free(p->qddhomob); p->qddhomob = NULL;}
+}
+
+void wigints_prepare(wigints *p, int code)
+{
+	int i;
+
+	assert(p != NULL);
+	if (p->type == 0) { // we have MAS
+		if (p->d2mas == NULL) {
+			p->d2mas = wigner2(0,p->beta[0],0);
+		}
+		if (p->Istate == 0) {
+			p->Imas = (complx*)malloc(13*sizeof(complx));
+			if (p->Imas == NULL) {
+				fprintf(stderr,"Error: wigints_prepare - Imas alloc failure\n");
+				exit(1);
+			}
+			for (i=2;i<6;i++) {
+				double dw = p->wr[0] * (double)(i-6);
+				p->Imas[i] = Cmul(Complx(0,1.0/dw),Csub(Cexpi(-dw*p->times[1]),Cexpi(-dw*p->times[0])));
+			}
+			p->Imas[6] = Complx(p->times[1]-p->times[0],0.0);
+			p->Imas[7] = Conj(p->Imas[5]);
+			p->Imas[8] = Conj(p->Imas[4]);
+			p->Imas[9] = Conj(p->Imas[3]);
+			p->Imas[10] = Conj(p->Imas[2]);
+			p->Istate = 2; // good for up to second order
+		}
+	} else {            // we have DOR
+		if (p->d2dor1 == NULL) {
+			p->d2dor1 = wigner2(0,p->beta[0],0);
+			p->d2dor2 = wigner2(0,p->beta[1],0);
+		}
+		if (p->Istate == 0) {
+			p->Idor = (complx*)malloc(13*13*sizeof(complx));
+			if (p->Idor == NULL) {
+				fprintf(stderr,"Error: wigints_prepare - Idor alloc failure\n");
+				exit(1);
+			}
+			int j;
+			for (i=2; i<11; i++) {
+				double dw1 = p->wr[0]*(double)(i-6);
+				for (j=2; j<11; j++) {
+					double dw2 = p->wr[1]*(double)(j-6);
+					p->Idor[i*13+j] = Cmul(Complx(0,1.0/(dw1+dw2)),Csub(Cexpi(-(dw1+dw2)*p->times[1]),Cexpi(-(dw1+dw2)*p->times[0])));
+				}
+			}
+			p->Istate = 2; // good for up to second order
+		}
+	}
+	switch (code) {
+	case 2:  // quadrupole second order
+		if (p->q2a != NULL) break; // work is already done
+		p->q2a = (complx *)malloc(5*5*sizeof(complx));  // d(m,-1)*d(n,+1)*I(m+n)
+		p->q2b = (complx *)malloc(5*5*sizeof(complx));  // d(m,-2)*d(n,+2)*I(m+n)
+		if (p->q2a == NULL || p->q2b == NULL) {
+			fprintf(stderr,"Error: wigints_prepare can not allocate q2a, q2b\n");
+			exit(1);
+		}
+		if (p->type == 2) { //we have MAS
+			int j;
+			for (i=0; i<5; i++) {
+				for (j=0; j<5; j++) {
+					p->q2a[i+j*5] = Cmul(p->d2mas->data[i+1*5],Cmul(p->d2mas->data[j+3*5],p->Imas[i+j+2]));
+					p->q2b[i+j*5] = Cmul(p->d2mas->data[i+0*5],Cmul(p->d2mas->data[j+4*5],p->Imas[i+j+2]));
+				}
+			}
+		} else {    // we have DOR
+			int j, k, l;
+			complx z1, z2, z3;
+			for (i=0; i<5; i++) {
+				for (j=0; j<5; j++) {
+					for (k=0; k<5; k++) {
+						for (l=0; l<5; l++) {
+							z1 = Cmul(p->d2dor1->data[i+k*5],p->d2dor2->data[k+1*5]);
+							z2 = Cmul(p->d2dor1->data[j+l*5],p->d2dor2->data[l+3*5]);
+							z3.re =z1.re*z2.re - z1.im*z2.im; z3.im = z1.re*z2.im+z1.im*z2.re;
+							p->q2a[i+j*5] = Cmul(z3,p->Idor[(i+j)*13+(k+l)]);
+							z1 = Cmul(p->d2dor1->data[i+k*5],p->d2dor2->data[k+0*5]);
+							z2 = Cmul(p->d2dor1->data[j+l*5],p->d2dor2->data[l+4*5]);
+							z3.re =z1.re*z2.re - z1.im*z2.im; z3.im = z1.re*z2.im+z1.im*z2.re;
+							p->q2b[i+j*5] = Cmul(z3,p->Idor[(i+j)*13+(k+l)]);
+						}
+					}
+				}
+			}
+		}
+		break;
+	case 3: // quadrupole third order
+		if (p->Istate != 3) {
+			assert(p->Istate == 2);
+			if (p->type == 0) {  // we have MAS
+				double dw = -6*p->wr[0];
+				p->Imas[0] = Cmul(Complx(0,1.0/dw),Csub(Cexpi(-dw*p->times[1]),Cexpi(-dw*p->times[0])));
+				dw = -5*p->wr[0];
+				p->Imas[1] = Cmul(Complx(0,1.0/dw),Csub(Cexpi(-dw*p->times[1]),Cexpi(-dw*p->times[0])));
+				p->Imas[11] = Conj(p->Imas[1]);
+				p->Imas[12] = Conj(p->Imas[0]);
+			} else {             // we have DOR
+				double dw1 = -6*p->wr[0];
+				double dw2 = -6*p->wr[1];
+				p->Idor[0*13+0] = Cmul(Complx(0,1.0/(dw1+dw2)),Csub(Cexpi(-(dw1+dw2)*p->times[1]),Cexpi(-(dw1+dw2)*p->times[0])));
+				dw2 = -dw2; // = +6
+				p->Idor[0*13+12] = Cmul(Complx(0,1.0/(dw1+dw2)),Csub(Cexpi(-(dw1+dw2)*p->times[1]),Cexpi(-(dw1+dw2)*p->times[0])));
+				dw2 = -5*p->wr[1];
+				p->Idor[0*13+1] = Cmul(Complx(0,1.0/(dw1+dw2)),Csub(Cexpi(-(dw1+dw2)*p->times[1]),Cexpi(-(dw1+dw2)*p->times[0])));
+				dw2 = -dw2; // = +5
+				p->Idor[0*13+11] = Cmul(Complx(0,1.0/(dw1+dw2)),Csub(Cexpi(-(dw1+dw2)*p->times[1]),Cexpi(-(dw1+dw2)*p->times[0])));
+
+				dw1 = -5*p->wr[0];  // dw2 remains +5
+				p->Idor[1*13+11] = Cmul(Complx(0,1.0/(dw1+dw2)),Csub(Cexpi(-(dw1+dw2)*p->times[1]),Cexpi(-(dw1+dw2)*p->times[0])));
+				dw2 = -dw2; // = -5
+				p->Idor[1*13+1] = Cmul(Complx(0,1.0/(dw1+dw2)),Csub(Cexpi(-(dw1+dw2)*p->times[1]),Cexpi(-(dw1+dw2)*p->times[0])));
+				dw2 = -6*p->wr[1];
+				p->Idor[1*13+0] = Cmul(Complx(0,1.0/(dw1+dw2)),Csub(Cexpi(-(dw1+dw2)*p->times[1]),Cexpi(-(dw1+dw2)*p->times[0])));
+				dw2 = -dw2; // = +6
+				p->Idor[1*13+12] = Cmul(Complx(0,1.0/(dw1+dw2)),Csub(Cexpi(-(dw1+dw2)*p->times[1]),Cexpi(-(dw1+dw2)*p->times[0])));
+
+				p->Idor[12*13+0] = Conj(p->Idor[0*13+12]);
+				p->Idor[12*13+1] = Conj(p->Idor[0*13+11]);
+				p->Idor[12*13+12] = Conj(p->Idor[0*13+0]);
+				p->Idor[12*13+11] = Conj(p->Idor[0*13+1]);
+				p->Idor[11*13+0] = Conj(p->Idor[1*13+12]);
+				p->Idor[11*13+1] = Conj(p->Idor[1*13+11]);
+				p->Idor[11*13+12] = Conj(p->Idor[1*13+0]);
+				p->Idor[11*13+11] = Conj(p->Idor[1*13+1]);
+			}
+			p->Istate = 3;
+		}
+		break;
+	case 4:  // mixing Q-CSA or Q-DDhetero
+		break;
+	case 5:  // mixing Q-DDhomo
+		break;
+	default:
+		fprintf(stderr,"Error: wigints_prepare - invalid code\n");
+		exit(1);
+	}
 }
 
 /* this makes final rotation ROT->LAB, integrates and creates interaction Hamiltonian */

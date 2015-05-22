@@ -17,6 +17,7 @@
 #include "ham.h"
 #include "pulse.h"
 #include "fftw3.h"
+#include "spinsys.h"
 
 	/* for acurate timings on windows */
 //#define TIMING
@@ -222,8 +223,8 @@ void direct_acqblock(Tcl_Interp *interp,Tcl_Obj *obj,Sim_info *sim,Sim_wsp *wsp)
 	}
 	t0 = wsp->t - t0;
 	if (t0 > wsp->dw*(wsp->Nacq-1)) {
-		fprintf(stderr,"Error: acq_block is too long: duration %g > acquisition time %g\n",t0,wsp->dw*(wsp->Nacq-1));
-		exit(1);
+		if (verbose & VERBOSE_ACQBLOCK) printf("WARNING: acq_block is too long: duration %g > acquisition time %g\n",t0,wsp->dw*(wsp->Nacq-1));
+		//exit(1);
 	}
 	l = wsp->acqblock_sto - ACQBLOCK_STO_INI;
 	DEBUGPRINT("acq_block: FIRST run, elapsed time %g us, %d dwelltime propagators created\n",t0,l);
@@ -245,8 +246,10 @@ void direct_acqblock(Tcl_Interp *interp,Tcl_Obj *obj,Sim_info *sim,Sim_wsp *wsp)
 	if (k*t0 > wsp->dw*(wsp->Nacq-1)) {
 		if (verbose & VERBOSE_ACQBLOCK) printf("\nWARNING: acq_block is NOT properly synchronized: Hamiltonian period %g > acquisition time %g\n\n",k*t0,wsp->dw*(wsp->Nacq-1));
 		while (k*t0 > wsp->dw*(wsp->Nacq-1)) k--;
-		if (k*t0 < wsp->dw*(wsp->Nacq-1)) k++;
-		l = (int)floor(k*t0/wsp->dw);
+		//if (verbose & VERBOSE_ACQBLOCK) printf("1. Reducing k to %d \n",k);
+		if (k*t0 < wsp->dw*(wsp->Nacq-1) && fabs(k*t0-wsp->dw*(wsp->Nacq-1))>1e-6) k++;
+		//if (verbose & VERBOSE_ACQBLOCK) printf("adjusting k to %d \n",k);
+		l = (int)floor(k*t0/wsp->dw+1e-6);
 		if (verbose & VERBOSE_ACQBLOCK) printf("Reducing acq_block repetitions to %d (total period %g, total acquisition %g)\n",k,k*t0,wsp->dw*(wsp->Nacq-1));
 		//exit(1);
 	}
@@ -975,6 +978,14 @@ void direct_acqblock_freq(Tcl_Interp *interp,Tcl_Obj *obj,Sim_info *sim,Sim_wsp 
 	int r, c, N = sim->points_per_cycle;
 	double binsize = sim->sw*2*M_PI/sim->np;
 	int direction = sim->conjugate_fid ? -1 : +1;
+	int binshift = 0;
+	if (sim->labframe == 1) {
+		double dum = ss_gamma(sim->ss,sim->obs_nuc)*sim->specfreq/ss_gamma1H()*2*M_PI;
+		//printf("obsnuc: %d, g:%g, gh:%g, frq: %g",sim->obs_nuc,ss_gamma(sim->ss,sim->obs_nuc),ss_gamma1H(),dum/2/M_PI);
+		dum = dum - floor(dum/freqT)*freqT;
+		binshift = (int)(dum/binsize);
+		//printf("\nBinshift is %d, freqT=%g\n",binshift,freqT/2/M_PI);
+	}
 	//printf("binsize = %g\n",binsize);
     fftw_complex *fftin = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * N);
     fftw_complex *fftout = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * N);
@@ -1012,7 +1023,7 @@ void direct_acqblock_freq(Tcl_Interp *interp,Tcl_Obj *obj,Sim_info *sim,Sim_wsp 
 			fftw_execute_dft(sim->fftw_plans[wsp->thread_id],fftin,fftout);
 			for (j=0; j<N; j++) {
 				//bin = (int)(1.5-(diff + freqT*(j-N/2+1))/binsize +sim->np/2);
-				bin = (int)(1.5+direction*(diff + freqT*(j-N/2+1))/binsize +sim->np/2);
+				bin = (int)(1.5+direction*(diff + freqT*(j-N/2+1))/binsize +sim->np/2) + binshift;
 				//printf("index %d -> freq = %g, bin %d -> ",j,diff+freqT*(j-N/2+1),bin);
 				while (bin < 1) bin += sim->np;
 				while (bin > sim->np) bin -= sim->np;

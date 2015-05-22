@@ -174,6 +174,9 @@ Sim_info * sim_initialize(Tcl_Interp* interp)
 			  s->propmethod = 4;
 		  } else if (!strncmp(buf,"dsyev",5)) {
 			  s->propmethod = 5; // diag with dsyev found always thread safe but slower
+		  } else if (!strncmp(buf,"mcn",3)) {
+			  s->propmethod = 7;
+			  s->do_avg = 1;
 		  } else if (!strncmp(buf,"sparse",6)) {
 			  s->sparse = 1;
 		  } else if (!strncmp(buf,"block_diag",10)) {
@@ -198,7 +201,7 @@ Sim_info * sim_initialize(Tcl_Interp* interp)
 		  } else {
 			  fprintf(stderr,"Error: method option '%s' not known.\n",buf);
 			  fprintf(stderr,"Must be one of : direct/idirect/gcompute/igcompute,\n");
-			  fprintf(stderr,"               : diag/dsyev/pade/cheby1/cheby2/taylor, \n");
+			  fprintf(stderr,"               : diag/dsyev/pade/cheby1/cheby2/taylor/mcn, \n");
 			  fprintf(stderr,"               : sparse, block_diag, \n");
 			  fprintf(stderr,"               : time/frequency, \n");
 			  fprintf(stderr,"               : FWTinterpolation/ASGinterpolation/FWTASGinterpolation\n");
@@ -492,7 +495,7 @@ Sim_info * sim_initialize(Tcl_Interp* interp)
 	  s->fftw_plans = NULL;
   }
 
-  s->do_avg = TclGetInt(interp,"par","do_avg",0,0);
+  if (s->propmethod != 7) s->do_avg = TclGetInt(interp,"par","do_avg",0,0);
 
   return s;
 }
