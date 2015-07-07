@@ -8,6 +8,40 @@
 
 /* Begin PBXBuildFile section */
 		B1A43DC21ADE242A00C8686F /* libtcl8.6.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = B1C6AB2619F444A000D788F0 /* libtcl8.6.dylib */; };
+		B1DA85681B0D925200B4C276 /* allocation.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC5417B505D700F68BD3 /* allocation.c */; };
+		B1DA85691B0D925200B4C276 /* auxmath.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC5617B505D700F68BD3 /* auxmath.c */; };
+		B1DA856A1B0D925200B4C276 /* averaging.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC5817B505D700F68BD3 /* averaging.c */; };
+		B1DA856B1B0D925200B4C276 /* B0inhom.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC5A17B505D700F68BD3 /* B0inhom.c */; };
+		B1DA856C1B0D925200B4C276 /* blockdiag.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC5C17B505D700F68BD3 /* blockdiag.c */; };
+		B1DA856D1B0D925200B4C276 /* cm.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC5E17B505D700F68BD3 /* cm.c */; };
+		B1DA856E1B0D925200B4C276 /* complx.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC6017B505D700F68BD3 /* complx.c */; };
+		B1DA856F1B0D925200B4C276 /* cryst.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC6217B505D700F68BD3 /* cryst.c */; };
+		B1DA85701B0D925200B4C276 /* crystdat.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC6417B505D700F68BD3 /* crystdat.c */; };
+		B1DA85711B0D925200B4C276 /* fft.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC6817B505D700F68BD3 /* fft.c */; };
+		B1DA85721B0D925200B4C276 /* fidcalc.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC6917B505D700F68BD3 /* fidcalc.c */; };
+		B1DA85731B0D925200B4C276 /* ftools.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC6B17B505D700F68BD3 /* ftools.c */; };
+		B1DA85741B0D925200B4C276 /* ham.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC6C17B505D700F68BD3 /* ham.c */; };
+		B1DA85751B0D925200B4C276 /* iodata.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC6E17B505D700F68BD3 /* iodata.c */; };
+		B1DA85761B0D925200B4C276 /* isotopes.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC7017B505D700F68BD3 /* isotopes.c */; };
+		B1DA85771B0D925200B4C276 /* lbfgs.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC7117B505D700F68BD3 /* lbfgs.c */; };
+		B1DA85781B0D925200B4C276 /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC7317B505D700F68BD3 /* main.c */; };
+		B1DA85791B0D925200B4C276 /* matrix.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC7417B505D700F68BD3 /* matrix.c */; };
+		B1DA857A1B0D925200B4C276 /* OCroutines.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC7717B505D700F68BD3 /* OCroutines.c */; };
+		B1DA857B1B0D925200B4C276 /* pulse.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC7917B505D700F68BD3 /* pulse.c */; };
+		B1DA857C1B0D925200B4C276 /* readsys.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC7B17B505D700F68BD3 /* readsys.c */; };
+		B1DA857D1B0D925200B4C276 /* relax.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC7C17B505D700F68BD3 /* relax.c */; };
+		B1DA857E1B0D925200B4C276 /* rfprof.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC7E17B505D700F68BD3 /* rfprof.c */; };
+		B1DA857F1B0D925200B4C276 /* rfshapes.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC8017B505D700F68BD3 /* rfshapes.c */; };
+		B1DA85801B0D925200B4C276 /* sim.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC8217B505D700F68BD3 /* sim.c */; };
+		B1DA85811B0D925200B4C276 /* simpson.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC8417B505D700F68BD3 /* simpson.c */; };
+		B1DA85821B0D925200B4C276 /* spinach.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC8517B505D700F68BD3 /* spinach.c */; };
+		B1DA85831B0D925200B4C276 /* spinsys.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC8817B505D700F68BD3 /* spinsys.c */; };
+		B1DA85841B0D925200B4C276 /* tclcode.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC8A17B505D700F68BD3 /* tclcode.c */; };
+		B1DA85851B0D925200B4C276 /* tclutil.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC8B17B505D700F68BD3 /* tclutil.c */; };
+		B1DA85861B0D925200B4C276 /* wigner.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC8E17B505D700F68BD3 /* wigner.c */; };
+		B1DA85871B0D925200B4C276 /* pthread_barrier_mac.c in Sources */ = {isa = PBXBuildFile; fileRef = B1F6C25517D5EB4800D455FF /* pthread_barrier_mac.c */; };
+		B1DA85891B0D925200B4C276 /* libtcl8.6.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = B1C6AB2619F444A000D788F0 /* libtcl8.6.dylib */; };
+		B1DA85901B0D927900B4C276 /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B1ECDCAF17B5061B00F68BD3 /* Accelerate.framework */; };
 		B1ECDC9017B505D700F68BD3 /* allocation.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC5417B505D700F68BD3 /* allocation.c */; };
 		B1ECDC9117B505D700F68BD3 /* auxmath.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC5617B505D700F68BD3 /* auxmath.c */; };
 		B1ECDC9217B505D700F68BD3 /* averaging.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC5817B505D700F68BD3 /* averaging.c */; };
@@ -39,11 +73,31 @@
 		B1ECDCAC17B505D700F68BD3 /* tclcode.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC8A17B505D700F68BD3 /* tclcode.c */; };
 		B1ECDCAD17B505D700F68BD3 /* tclutil.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC8B17B505D700F68BD3 /* tclutil.c */; };
 		B1ECDCAE17B505D700F68BD3 /* wigner.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC8E17B505D700F68BD3 /* wigner.c */; };
-		B1ECDCB017B5061B00F68BD3 /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B1ECDCAF17B5061B00F68BD3 /* Accelerate.framework */; };
 		B1F6C25717D5EB4800D455FF /* pthread_barrier_mac.c in Sources */ = {isa = PBXBuildFile; fileRef = B1F6C25517D5EB4800D455FF /* pthread_barrier_mac.c */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXBuildRule section */
+		B1DA858B1B0D925200B4C276 /* PBXBuildRule */ = {
+			isa = PBXBuildRule;
+			compilerSpec = com.intel.compilers.icc.15_0_0;
+			fileType = sourcecode.c;
+			isEditable = 1;
+			outputFiles = (
+			);
+			script = "# <com.apple.compilers.gcc>\n";
+		};
+/* End PBXBuildRule section */
+
 /* Begin PBXCopyFilesBuildPhase section */
+		B1DA858A1B0D925200B4C276 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
 		B1ECDC4617B504DF00F68BD3 /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -57,6 +111,7 @@
 
 /* Begin PBXFileReference section */
 		B1C6AB2619F444A000D788F0 /* libtcl8.6.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libtcl8.6.dylib; path = /opt/local/lib/libtcl8.6.dylib; sourceTree = "<absolute>"; };
+		B1DA858F1B0D925200B4C276 /* simpson_mkl */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = simpson_mkl; sourceTree = BUILT_PRODUCTS_DIR; };
 		B1ECDC4817B504DF00F68BD3 /* simpson */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = simpson; sourceTree = BUILT_PRODUCTS_DIR; };
 		B1ECDC5417B505D700F68BD3 /* allocation.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = allocation.c; sourceTree = SOURCE_ROOT; };
 		B1ECDC5517B505D700F68BD3 /* arithmetic_ansi.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = arithmetic_ansi.h; sourceTree = SOURCE_ROOT; };
@@ -124,12 +179,20 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		B1DA85881B0D925200B4C276 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B1DA85891B0D925200B4C276 /* libtcl8.6.dylib in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B1ECDC4517B504DF00F68BD3 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B1DA85901B0D927900B4C276 /* Accelerate.framework in Frameworks */,
 				B1A43DC21ADE242A00C8686F /* libtcl8.6.dylib in Frameworks */,
-				B1ECDCB017B5061B00F68BD3 /* Accelerate.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -150,6 +213,7 @@
 			isa = PBXGroup;
 			children = (
 				B1ECDC4817B504DF00F68BD3 /* simpson */,
+				B1DA858F1B0D925200B4C276 /* simpson_mkl */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -235,6 +299,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		B1DA85661B0D925200B4C276 /* simpson_mkl */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B1DA858C1B0D925200B4C276 /* Build configuration list for PBXNativeTarget "simpson_mkl" */;
+			buildPhases = (
+				B1DA85671B0D925200B4C276 /* Sources */,
+				B1DA85881B0D925200B4C276 /* Frameworks */,
+				B1DA858A1B0D925200B4C276 /* CopyFiles */,
+			);
+			buildRules = (
+				B1DA858B1B0D925200B4C276 /* PBXBuildRule */,
+			);
+			dependencies = (
+			);
+			name = simpson_mkl;
+			productName = "Simpson-4.1";
+			productReference = B1DA858F1B0D925200B4C276 /* simpson_mkl */;
+			productType = "com.apple.product-type.tool";
+		};
 		B1ECDC4717B504DF00F68BD3 /* simpson */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = B1ECDC5117B504E000F68BD3 /* Build configuration list for PBXNativeTarget "simpson" */;
@@ -274,11 +356,51 @@
 			projectRoot = "";
 			targets = (
 				B1ECDC4717B504DF00F68BD3 /* simpson */,
+				B1DA85661B0D925200B4C276 /* simpson_mkl */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXSourcesBuildPhase section */
+		B1DA85671B0D925200B4C276 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B1DA85681B0D925200B4C276 /* allocation.c in Sources */,
+				B1DA85691B0D925200B4C276 /* auxmath.c in Sources */,
+				B1DA856A1B0D925200B4C276 /* averaging.c in Sources */,
+				B1DA856B1B0D925200B4C276 /* B0inhom.c in Sources */,
+				B1DA856C1B0D925200B4C276 /* blockdiag.c in Sources */,
+				B1DA856D1B0D925200B4C276 /* cm.c in Sources */,
+				B1DA856E1B0D925200B4C276 /* complx.c in Sources */,
+				B1DA856F1B0D925200B4C276 /* cryst.c in Sources */,
+				B1DA85701B0D925200B4C276 /* crystdat.c in Sources */,
+				B1DA85711B0D925200B4C276 /* fft.c in Sources */,
+				B1DA85721B0D925200B4C276 /* fidcalc.c in Sources */,
+				B1DA85731B0D925200B4C276 /* ftools.c in Sources */,
+				B1DA85741B0D925200B4C276 /* ham.c in Sources */,
+				B1DA85751B0D925200B4C276 /* iodata.c in Sources */,
+				B1DA85761B0D925200B4C276 /* isotopes.c in Sources */,
+				B1DA85771B0D925200B4C276 /* lbfgs.c in Sources */,
+				B1DA85781B0D925200B4C276 /* main.c in Sources */,
+				B1DA85791B0D925200B4C276 /* matrix.c in Sources */,
+				B1DA857A1B0D925200B4C276 /* OCroutines.c in Sources */,
+				B1DA857B1B0D925200B4C276 /* pulse.c in Sources */,
+				B1DA857C1B0D925200B4C276 /* readsys.c in Sources */,
+				B1DA857D1B0D925200B4C276 /* relax.c in Sources */,
+				B1DA857E1B0D925200B4C276 /* rfprof.c in Sources */,
+				B1DA857F1B0D925200B4C276 /* rfshapes.c in Sources */,
+				B1DA85801B0D925200B4C276 /* sim.c in Sources */,
+				B1DA85811B0D925200B4C276 /* simpson.c in Sources */,
+				B1DA85821B0D925200B4C276 /* spinach.c in Sources */,
+				B1DA85831B0D925200B4C276 /* spinsys.c in Sources */,
+				B1DA85841B0D925200B4C276 /* tclcode.c in Sources */,
+				B1DA85851B0D925200B4C276 /* tclutil.c in Sources */,
+				B1DA85861B0D925200B4C276 /* wigner.c in Sources */,
+				B1DA85871B0D925200B4C276 /* pthread_barrier_mac.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B1ECDC4417B504DF00F68BD3 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -321,6 +443,76 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		B1DA858D1B0D925200B4C276 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD_32_64_BIT)";
+				CLANG_LINK_OBJC_RUNTIME = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(USER_LIBRARY_DIR)/Frameworks",
+				);
+				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
+				HEADER_SEARCH_PATHS = (
+					/usr/local/include,
+					/opt/local/include,
+					/opt/intel/mkl/include,
+				);
+				ICC_OTHER_CFLAGS = "-DINTEL_MKL";
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					/opt/local/lib,
+					/opt/intel/mkl/lib,
+				);
+				MACOSX_DEPLOYMENT_TARGET = 10.6;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = (
+					/usr/local/lib/libnfft3.a,
+					/usr/local/lib/libfftw3.a,
+					"-lmkl_intel",
+					"-lmkl_sequential",
+					"-lmkl_core",
+				);
+				PRODUCT_NAME = simpson_mkl;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		B1DA858E1B0D925200B4C276 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD_32_64_BIT)";
+				CLANG_LINK_OBJC_RUNTIME = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(USER_LIBRARY_DIR)/Frameworks",
+				);
+				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
+				HEADER_SEARCH_PATHS = (
+					/usr/local/include,
+					/opt/local/include,
+					/opt/intel/mkl/include,
+				);
+				ICC_OTHER_CFLAGS = "-DINTEL_MKL";
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					/opt/local/lib,
+					/opt/intel/mkl/lib,
+				);
+				MACOSX_DEPLOYMENT_TARGET = 10.6;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = (
+					/usr/local/lib/libnfft3.a,
+					/usr/local/lib/libfftw3.a,
+					"-lmkl_intel",
+					"-lmkl_sequential",
+					"-lmkl_core",
+				);
+				PRODUCT_NAME = simpson_mkl;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
 		B1ECDC4F17B504E000F68BD3 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -368,7 +560,7 @@
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = YES;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEBUG_INFORMATION_FORMAT = dwarf;
 				GCC_C_LANGUAGE_STANDARD = gnu99;
 				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -396,10 +588,13 @@
 				HEADER_SEARCH_PATHS = (
 					/usr/local/include,
 					/opt/local/include,
+					/opt/intel/mkl/include,
 				);
+				ICC_OTHER_CFLAGS = "-DINTEL_MKL";
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					/opt/local/lib,
+					/opt/intel/mkl/lib,
 				);
 				MACOSX_DEPLOYMENT_TARGET = 10.6;
 				ONLY_ACTIVE_ARCH = NO;
@@ -425,10 +620,13 @@
 				HEADER_SEARCH_PATHS = (
 					/usr/local/include,
 					/opt/local/include,
+					/opt/intel/mkl/include,
 				);
+				ICC_OTHER_CFLAGS = "-DINTEL_MKL";
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					/opt/local/lib,
+					/opt/intel/mkl/lib,
 				);
 				MACOSX_DEPLOYMENT_TARGET = 10.6;
 				ONLY_ACTIVE_ARCH = NO;
@@ -444,6 +642,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		B1DA858C1B0D925200B4C276 /* Build configuration list for PBXNativeTarget "simpson_mkl" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B1DA858D1B0D925200B4C276 /* Debug */,
+				B1DA858E1B0D925200B4C276 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		B1ECDC4317B504DF00F68BD3 /* Build configuration list for PBXProject "Simpson" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
