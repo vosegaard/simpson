@@ -762,7 +762,7 @@ void readsys(Tcl_Interp* interp,Sim_info* s)
           printf( "  quadrupolar constant         :  %g Hz\n",data[0]);
           printf( "  quadrupolar assymetry        :  %g\n",qptr->eta);
           printf( "  euler angles of tensor       :  (%g,%g,%g) degrees\n",qptr->pas[0],qptr->pas[1],qptr->pas[2]);
-          DEBUGPRINT("  qptr->wq = %f, qptr->w0 = %f\n",qptr->wq, qptr->w0);
+          printf("  perturbation treatment validity report: %3.2f << 1 is%s fulfilled\n",fabs(qptr->wq/qptr->w0), fabs(10*qptr->wq/qptr->w0) < 1 ? "" : " not");
         }
     	continue;
     }
@@ -886,7 +886,7 @@ void readsys(Tcl_Interp* interp,Sim_info* s)
 			  mat_double *dumIz = Iz_ham(s,i);
 			  blk_dm_multod_diag(s->Hiso,dumIz,ss_gamma(s->ss,i)*s->specfreq/ss_gamma1H()*2*M_PI);
 			  free_double_matrix(dumIz);
-			  printf("Nucleus %d : Larmor freq. %15.10f\n",i,ss_gamma(s->ss,i)*s->specfreq/ss_gamma1H()*2*M_PI);
+			  //printf("Nucleus %d : Larmor freq. %15.10f\n",i,ss_gamma(s->ss,i)*s->specfreq/ss_gamma1H()*2*M_PI);
 		  }
 	  }
 	  /* chemical shift */

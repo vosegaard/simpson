@@ -5614,6 +5614,39 @@ void prop_diag2_real(mat_complx *prop, mat_double *ham, double dt)
 	TIMING_TOC(tv1,tv2,"DSYEVR done");
 }
 
+void prop_mcn_real(mat_complx *prop, mat_double *ham, double dt)
+{
+	int dim = prop->row;
+	int i;
+
+	dm_muld(ham, dt/2);
+	mat_complx *lhs = dm_imag2(ham);
+	mat_complx *rhs = cm_dup(lhs);
+	cm_muld(rhs,-1);
+	// add 1 to the diagonal
+	complx *z1 = lhs->data;
+	complx *z2 = rhs->data;
+	for (i=0; i<dim; i++) {
+		z1->re += 1.0;
+		z2->re += 1.0;
+		z1 += (dim+1);
+		z2 += (dim+1);
+	}
+	int *pvec = (int*)malloc((dim+1)*sizeof(int));
+	int info = 0;
+	zgesv_(&dim,&dim,lhs->data,&dim,pvec,rhs->data,&dim,&info);
+	if (info != 0) {
+		fprintf(stderr,"prop_mcn error: zgesv failed with info=%d\n",info);
+		exit(1);
+	}
+    free(pvec);
+    free_complx_matrix(lhs);
+	// update propagator
+	cm_multo_rev(prop,rhs);
+	free_complx_matrix(rhs);
+
+}
+
 /****
  *  Note: calculates prop = exp(-i*H*dt)*prop
  *        matrix 'ham' gets overwritten with intermediate results!!!
@@ -5683,6 +5716,9 @@ void prop_real(mat_complx *prop, mat_double *ham, double dt, int method)
 				dm_sparse(ham,SPARSE_TOL);
 #endif
 				prop_cheby3_real(prop,ham,dt);
+				break; }
+			case 7: {// via modified Crank-Nicolsson
+				prop_mcn_real(prop,ham,dt);
 				break; }
 			default:
 				fprintf(stderr,"prop_real error: unknown calculation method (%d), use diagonalization, pade, chebyshev, taylor or lanczos\n",method);
