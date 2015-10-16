@@ -75,7 +75,8 @@ void fill_Tquad_2(Sim_info *sim, int nuc, Quadrupole *qptr);
 void fill_Tquad_3(Sim_info *sim, Quadrupole *qptr);
 void fill_Tmix_dipole(Sim_info *sim, Mixing *mptr);
 void fill_Tabmix_dipole(Sim_info *sim, Mixing *mptr);
-
+void fill_hyperfine_Tab(Sim_info *sim, Hyperfine *mptr);
+// fff
 
 #endif
 

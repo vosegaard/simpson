@@ -39,6 +39,8 @@ int shift_exist(Sim_info* s,int n);
 int dipole_exist(Sim_info* s,int n1, int n2);
 int jcoupling_exist(Sim_info* s,int n1, int n2);
 int quadrupole_exist(Sim_info* s,int n);
+int gtensor_exist(Sim_info* s,int n);
+int hyperfine_exist(Sim_info* s,int n1, int n2);
 
 void ham_rotate(Sim_info *s, Sim_wsp *wsp);
 

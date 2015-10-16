@@ -104,6 +104,9 @@ setvar ssnam {
   quadrupole N order aniso eta alpha beta gamma
   dipole N N aniso alpha beta gamma
   dipole_ave N N aniso eta alpha beta gamma
+  gtensor N iso aniso eta alpha beta gamma
+  hyperfine N N iso aniso eta alpha beta gamma
+  mixing N N
 }
 
 # Substitutes variable names with the corresponding values
@@ -294,7 +297,7 @@ proc spinsys_resolve { { fitval {} } } {
 proc spinsys { data } {
   global spinsys
 
-  set okpar { channels nuclei dipole quadrupole shift jcoupling mixingterm dipole_ave }
+  set okpar { channels nuclei dipole quadrupole shift jcoupling mixing dipole_ave gtensor hyperfine}
 
   set data [split $data "\n"]
   foreach lst $data {
@@ -326,7 +329,7 @@ proc par {data} {
   global par
 
   set okpar {
-    proton_frequency spin_rate sw sw1 np ni method rotor_angle
+    proton_frequency field spin_rate sw sw1 np ni method rotor_angle
     gamma_angles fixed_rep real_spec block_diag detect_operator
     crystal_file start_operator name verbose various variable pulse_sequence
     conjugate_fid dipole_check gamma_zero use_cluster new_cluster cluster_port
@@ -345,7 +348,7 @@ proc par {data} {
   # ZT: prop_method is for which method to use for propagator calculation
 
   set allowsubst {
-    proton_frequency spin_rate sw sw1 np ni rotor_angle
+    proton_frequency field spin_rate sw sw1 np ni rotor_angle
     gamma_angles fixed_rep real_spec block_diag gamma_zero
     inner_rotor_angle outer_rotor_angle inner_spin_rate outer_spin_rate
     variable

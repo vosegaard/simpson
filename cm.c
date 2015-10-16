@@ -191,7 +191,7 @@ void cv_matmulto(complx *vec, mat_complx *A)
 void cv_matmul(complx *res, mat_complx *A, complx *vec)
 {
 	int dim = LEN(vec);
-	if ( dim != A->col || dim != LEN(res)) {
+	if ( dim != A->col || A->row != LEN(res)) {
 		fprintf(stderr,"Error: cv_matmulto - dimension mismatch res(%d)=A(%d,%d).v(%d)\n",LEN(res),A->row,A->col,dim);
 		exit(1);
 	}
@@ -230,7 +230,7 @@ void cv_matmul(complx *res, mat_complx *A, complx *vec)
 			mkl_zcsrmv("N",&(A->row),&(A->col),&Cunit,"GNNFUU",A->data,A->icol,A->irow,&(A->irow[1]),&(vec[1]),&Cnull,&(res[1]));
 		}
 #else
-		fprintf(stderr,"Error: cv_matmulto - sparse algebra not compiled\n");
+		fprintf(stderr,"Error: cv_matmul - sparse algebra not compiled\n");
 		exit(1);
 #endif
 		break;}
@@ -5619,6 +5619,10 @@ void prop_mcn_real(mat_complx *prop, mat_double *ham, double dt)
 	int dim = prop->row;
 	int i;
 
+	TIMING_INIT_VAR2(tv1,tv2);
+	//dm_print(ham,"Hamiltonian");
+	//printf("dt = %g\n",dt);
+
 	dm_muld(ham, dt/2);
 	mat_complx *lhs = dm_imag2(ham);
 	mat_complx *rhs = cm_dup(lhs);
@@ -5632,6 +5636,11 @@ void prop_mcn_real(mat_complx *prop, mat_double *ham, double dt)
 		z1 += (dim+1);
 		z2 += (dim+1);
 	}
+	// copy of rhs to benchmark speed of solutions
+	mat_complx *rhs2 = cm_dup(rhs);
+
+	// Solving the system using ZGESV
+	TIMING_TIC(tv1);
 	int *pvec = (int*)malloc((dim+1)*sizeof(int));
 	int info = 0;
 	zgesv_(&dim,&dim,lhs->data,&dim,pvec,rhs->data,&dim,&info);
@@ -5640,10 +5649,144 @@ void prop_mcn_real(mat_complx *prop, mat_double *ham, double dt)
 		exit(1);
 	}
     free(pvec);
+    TIMING_TOC(tv1,tv2,"MCN solved by zgesv");
+
+    // Solving the system using CGW iterative solver
+	TIMING_TIC(tv1);
+/*	complx *x = (complx*)malloc(3*dim*sizeof(complx));
+	complx *p = x + dim;
+	complx *Ap = p + dim;
+	complx *r = rhs2->data;
+	complx rz_new, rz_old, alpha, beta, dum;
+	const complx mone = Complx(-1.0,0.0);
+	int j;
+	for (i=0; i<dim; i++) { // loop over all rhs vectors
+		// initiate x vector
+		z2 = x+dim;
+		for (z1=x; z1<z2; z1++) {
+			z1->re = 1.0;
+			z1->im = 0.0;
+		}
+		// initiate r vector, r = rhs(i) - A.x
+		cblas_zgemv(CblasColMajor,CblasNoTrans,dim,dim,&mone,lhs->data,dim,x,1,&Cunit,r,1);
+		// initiate vector p, p = r
+		cblas_zcopy(dim,r,1,p,1);
+		// rz_old = r.'*r; scalar product without conjugation!
+		cblas_zdotu_sub(dim,r,1,r,1,&rz_old);
+		for (j=0; j<dim; j++) { // iteration loop
+			// Ap = A.p
+			cblas_zgemv(CblasColMajor,CblasNoTrans,dim,dim,&Cunit,lhs->data,dim,p,1,&Cnull,Ap,1);
+			// dum = Ap.'r
+			cblas_zdotu_sub(dim,Ap,1,r,1,&dum);
+			alpha = Cdiv(rz_old,dum);
+			// x = x + alpha*p;
+			cblas_zaxpy(dim,&alpha,p,1,x,1);
+			// r = r - alpha*Ap;
+			alpha.re *= -1; alpha.im *= -1;
+			cblas_zaxpy(dim,&alpha,Ap,1,r,1);
+			// rz_new = r.'*r
+			cblas_zdotu_sub(dim,r,1,r,1,&rz_new);
+			beta = Cdiv(rz_new,rz_old);
+			// p = r+beta*p
+			cblas_zscal(dim,&beta,p,1);
+			cblas_zaxpy(dim,&Cunit,r,1,p,1);
+			rz_old = rz_new;
+			if (Cabs(rz_old) < 1e-15) {
+				//printf("CGW: column %d done in %d iterations\n",i,j);
+				break;
+			}
+		}
+		// check if loop finished at dim
+		if (j == dim) {
+			printf("CGW: column %d used all iterations, dim = %d\n",i,j);
+		}
+		// copy solution x to rhs
+		cblas_zcopy(dim,x,1,r,1);
+		// increment to the next rhs
+		r += dim;
+	}
+	free(x);
+*/
+	// to initiate r = -i.dt.Ham
+	dm_muld(ham, -2); // correct previously scaled Ham
+	mat_complx *rhs3 = dm_imag2(ham);
+	int ddimm = dim*dim;
+	complx *x = (complx*)malloc((3*ddimm+2*dim)*sizeof(complx));
+	complx *p = x + ddimm;
+	complx *Ap = p + ddimm;
+	complx *r = rhs3->data;
+	complx *rz_new = Ap+ddimm;
+	complx *rz_old = rz_new + dim;
+	complx dum, alpha, beta, tostop;
+	//const complx mone = Complx(-1.0,0.0);
+	int j;
+	TIMING_INIT_VAR(tv3);
+		// initiate x vectors to zero
+		memset(x,0,ddimm*sizeof(complx));
+		// initiate x to unit matrix
+		z1 = x;
+		for (j=0; j<dim; j++) {
+			z1->re = 1.0;
+			z1 += dim+1;
+		}
+		// initiate r vector, r = rhs(i) - A.x -> it is already done when x = 0!
+		//cblas_zgemm(CblasColMajor,CblasNoTrans,CblasNoTrans,dim,dim,dim,&mone,lhs->data,dim,x,dim,&Cunit,r,dim);
+		// initiate vector p, p = r
+		cblas_zcopy(ddimm,r,1,p,1);
+		// rz_old = r.'*r; scalar product without conjugation!
+		for (i=0; i<dim; i++ ) {
+			cblas_zdotu_sub(dim,r+i*dim,1,r+i*dim,1,rz_old+i);
+		}
+		for (j=0; j<dim; j++) { // iteration loop
+			Czero(tostop);
+			// Ap = A.p
+			TIMING_TIC(tv2);
+			cblas_zgemm(CblasColMajor,CblasNoTrans,CblasNoTrans,dim,dim,dim,&Cunit,lhs->data,dim,p,dim,&Cnull,Ap,dim);
+			TIMING_TOC(tv2,tv3,"CGW - matmul");
+			for (i=0; i<dim; i++) {
+				// dum = Ap.'r
+				cblas_zdotu_sub(dim,Ap+i*dim,1,r+i*dim,1,&dum);
+				alpha = Cdiv(rz_old[i],dum);
+				// tady musim vse delat po sloupeccich...
+				// x = x + alpha*p;
+				cblas_zaxpy(dim,&alpha,p+i*dim,1,x+i*dim,1);
+				// r = r - alpha*Ap;
+				alpha.re *= -1; alpha.im *= -1;
+				cblas_zaxpy(dim,&alpha,Ap+i*dim,1,r+i*dim,1);
+				// rz_new = r.'*r
+				cblas_zdotu_sub(dim,r+i*dim,1,r+i*dim,1,rz_new+i);
+				beta = Cdiv(rz_new[i],rz_old[i]);
+				// p = r+beta*p
+				cblas_zscal(dim,&beta,p+i*dim,1);
+				cblas_zaxpy(dim,&Cunit,r+i*dim,1,p+i*dim,1);
+				rz_old[i] = rz_new[i];
+				tostop.re += rz_old[i].re; tostop.im += rz_old[i].im;
+			}
+			TIMING_TOC(tv3,tv2,"CGW - forcycle");
+			if (Cabs(tostop) < 1e-12) {
+				printf("CGW: column %d done in %d iterations\n",i,j);
+				break;
+			}
+		}
+		// check if loop finished at dim
+		if (j == dim) {
+			printf("CGW: column %d used all iterations, dim = %d\n",i,j);
+		}
+		// copy solution x to rhs
+		cblas_zcopy(ddimm,x,1,rhs2->data,1);
+	free(x);
+    TIMING_TOC(tv1,tv2,"MCN solved by CGW iterations");
+    printf("zgesv: %g, %g\n CGW : %g, %g\n",rhs->data[0].re,rhs->data[0].im,rhs2->data[0].re,rhs2->data[0].im);
+exit(1);
+    // compare solutions
+    //cm_print(rhs,"ZGESV");
+    //cm_print(rhs2,"CGW" );
+    free_complx_matrix(rhs);
+
     free_complx_matrix(lhs);
 	// update propagator
-	cm_multo_rev(prop,rhs);
-	free_complx_matrix(rhs);
+	cm_multo_rev(prop,rhs2);
+	free_complx_matrix(rhs2);
 
 }
 
@@ -5885,6 +6028,7 @@ void prop_complx(mat_complx *prop, mat_complx *ham, double dt, int method)
 			prop->basis = ham->basis;
 			for (i=0; i<dim; i++) {
 				prop->data[i] = Cexpi(-eigs[i+1].re);
+				//printf("   eig[%i] = (%g,%g)\n",i+1,eigs[i+1].re,eigs[i+1].im);
 			}
 		//cm_print(prop,"+++++>prop");
 			simtrans(prop,T);

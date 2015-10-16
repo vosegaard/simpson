@@ -67,5 +67,7 @@ mat_complx * cm_extract_block(mat_complx *cm, int r0, int c0, int Nr, int Nc);
 mat_double * dm_extract_block(mat_double *cm, int r0, int c0, int Nr, int Nc);
 void cm_addto_block(mat_complx *cm, mat_complx *bm, int r0, int c0);
 blk_mat_complx * blk_cm_ln(blk_mat_complx *blkm);
+void blk_cm_multocr(blk_mat_complx *blk_cm, blk_mat_double *blk_dm, complx z);
+void blk_cm_multod(blk_mat_complx *blk_cm1, blk_mat_complx *blk_cm2, double d);
 
 #endif /* BLOCKDIAG_H_ */

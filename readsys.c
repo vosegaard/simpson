@@ -29,7 +29,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
-#include <tcl.h>
+#include <tcl.h>c
 #include <assert.h>
 #include "matrix.h"
 #include "spinsys.h"
@@ -128,7 +128,7 @@ void readsys(Tcl_Interp* interp,Sim_info* s)
 {
   SpinSys* ss;
   int ver, Nnuc, Nchan, Nelm, NN, i, j, n1, n2, Jiso, Jani;
-  int Nshift=0, Nj=0, Ndip=0, Nquad=0, Nmix=0, Naniso;
+  int Nshift=0, Nj=0, Ndip=0, Nquad=0, Nmix=0, Ngten=0, Nhf=0, Naniso;
   char *buf, **names, **spins;
   Tcl_Obj **vals;
   Shift *csptr;
@@ -136,6 +136,8 @@ void readsys(Tcl_Interp* interp,Sim_info* s)
   Quadrupole *qptr;
   Jcoupling *jptr;
   Mixing *mptr;
+  Gtensor *gptr;
+  Hyperfine *hfptr;
   double data[8];
   int *spin_code, *mzmap=NULL, *permvec, Nmz, reps, mzpos, Ival, Icur, c_ini, n_c, Nblk, *blk_dims=NULL;
   int Hiso_isdiag, HQ_isdiag, Nbasis;
@@ -160,7 +162,13 @@ void readsys(Tcl_Interp* interp,Sim_info* s)
   }
   if (ver) printf( "Number of spins : %d\n",Nnuc);
   for (i=0; i<Nnuc; i++) {
-	  if (ver) printf("   nucleus %3d : '%s'\n",i+1,spins[i]);
+	  if (ver) {
+		  if (!strncmp(spins[i],"e",1)) {
+			  printf("  electron %3d : '%s'\n",i+1,spins[i]);
+		  } else {
+			  printf("   nucleus %3d : '%s'\n",i+1,spins[i]);
+		  }
+	  }
 	  ss_addspin(ss,spins[i]);
   }
 
@@ -492,6 +500,14 @@ void readsys(Tcl_Interp* interp,Sim_info* s)
     	Nmix++;
     	continue;
     }
+    if (!strncmp(names[i],"gtensor",7)) {
+    	Ngten++;
+    	continue;
+    }
+    if (!strncmp(names[i],"hyperfine",9)) {
+    	Nhf++;
+    	continue;
+    }
   }
   s->CS = (Shift**)malloc(Nshift*sizeof(Shift*));
   s->nCS = 0;
@@ -503,6 +519,10 @@ void readsys(Tcl_Interp* interp,Sim_info* s)
   s->nQ = 0;
   s->MIX = (Mixing**)malloc(Nmix*sizeof(Mixing*));
   s->nMIX = 0;
+  s->G = (Gtensor**)malloc(Ngten*sizeof(Gtensor*));
+  s->nG = 0;
+  s->HF = (Hyperfine**)malloc(Nhf*sizeof(Hyperfine*));
+  s->nHF = 0;
 
   s->matdim = ss->matdim;
   s->Hint_isdiag = 1;
@@ -561,7 +581,7 @@ void readsys(Tcl_Interp* interp,Sim_info* s)
           printf( "Chemical shift on nucleus %d\n",n1);
           printf( "  isotropic shift        : %g Hz\n",csptr->iso/2.0/M_PI);
           printf( "  anisotropic shift      : %g Hz\n",csptr->delta/2.0/M_PI);
-          printf( "  asymmetry parameter   : %g\n",csptr->eta);
+          printf( "  asymmetry parameter    : %g\n",csptr->eta);
           printf( "  euler angles of tensor :  (%g,%g,%g) degrees\n",csptr->pas[0],csptr->pas[1],csptr->pas[2]);
           //dm_print(csptr->T,"Operator matrix");
         }
@@ -630,7 +650,7 @@ void readsys(Tcl_Interp* interp,Sim_info* s)
           printf( "J-coupling between nucleus %d and %d\n",n1,n2);
           printf( "  isotropic value        : %g Hz\n",jptr->iso/2.0/M_PI);
           printf( "  anisotropic value      : %g Hz\n",jptr->delta/2.0/M_PI);
-          printf( "  asymmetry             : %g \n",jptr->eta);
+          printf( "  asymmetry              : %g \n",jptr->eta);
           printf( "  euler angles of tensor :  (%g,%g,%g) degrees\n",jptr->pas[0],jptr->pas[1],jptr->pas[2]);
         }
     	continue;
@@ -821,10 +841,129 @@ void readsys(Tcl_Interp* interp,Sim_info* s)
     		exit(1);
     	}
 
-
-
-
         continue;
+    }
+    if (!strncmp(names[i],"gtensor",7)) {
+    	if (NN != 7) {
+    		fprintf(stderr,"Error: reading gtensor - parameter count mismatch\n");
+    		exit(1);
+    	}
+    	if (Tcl_GetIntFromObj(interp,vals[0],&n1) != TCL_OK) {
+    		fprintf(stderr,"Error: readsys - gtensor - int conversion failure\n");
+    		exit(1);
+    	}
+    	if (n1 < 1 || n1 > ss->nspins) {
+    		fprintf(stderr,"Error: spinsys: gtensor %d  out of defined range\n",n1);
+    		exit(1);
+    	}
+    	if (gtensor_exist(s,n1) >= 0) {
+    		fprintf(stderr,"Error: spinsys: gtensor already exists for electron %d\n",n1);
+    		exit(1);
+    	}
+    	// test if it is electron
+    	if (ss->iso[n1]->number != 0) {
+    		fprintf(stderr,"Error: spinsys: gtensor : element %d is not electron\n",n1);
+    		exit(1);
+    	}
+    	for (j=1; j<NN; j++) {
+    		if (Tcl_GetDoubleFromObj(interp,vals[j],&(data[j-1])) != TCL_OK) {
+    			fprintf(stderr,"Error: readsys - gtensor - double conversion failure\n");
+    			exit(1);
+    		}
+    	}
+    	/* when zero amplitudes, do nothing */
+    	if ( (fabs(data[0]) < TINY) && (fabs(data[1]) < TINY) ) continue;
+    	s->G[(s->nG)++] = gptr = (Gtensor*)malloc(sizeof(Gtensor));
+    	gptr->nuc = n1; gptr->eta = data[2]; gptr->pas[0] = data[3]; gptr->pas[1] = data[4]; gptr->pas[2] = data[5];
+   		gptr->iso = -data[0]*2.0*M_PI; gptr->delta = -data[1]*2.0*M_PI;
+    	if (fabs(gptr->delta) > TINY) {
+    		Naniso++;
+    		gptr->Rmol = Dtensor2(SQRT2BY3*gptr->delta, gptr->eta);
+    		gptr->Rmol = wig2roti(gptr->Rmol, gptr->pas[0], gptr->pas[1], gptr->pas[2]);
+    	} else {
+    		gptr->Rmol = NULL;
+    	}
+    	gptr->T = NULL;
+    	gptr->T2q[0] = gptr->T2q[1] = gptr->T2q[2] = gptr->T2q[3] = gptr->T2q[4] = NULL;
+        if ( ver ) {
+          printf( "G-tensor for electron %d\n",n1);
+          printf( "  isotropic value        : %g Hz\n",gptr->iso/2.0/M_PI);
+          printf( "  anisotropic value      : %g Hz\n",gptr->delta/2.0/M_PI);
+          printf( "  asymmetry parameter    : %g\n",gptr->eta);
+          printf( "  euler angles of tensor :  (%g,%g,%g) degrees\n",gptr->pas[0],gptr->pas[1],gptr->pas[2]);
+        }
+    	continue;
+    }
+    if (!strncmp(names[i],"hyperfine",9)) {
+    	if (NN != 8) {
+    		fprintf(stderr,"Error: reading hyperfine - parameter count mismatch\n");
+    		exit(1);
+    	}
+    	if (Tcl_GetIntFromObj(interp,vals[0],&n1) != TCL_OK) {
+    		fprintf(stderr,"Error: readsys - hyperfine - int conversion failure\n");
+    		exit(1);
+    	}
+    	if (Tcl_GetIntFromObj(interp,vals[1],&n2) != TCL_OK) {
+    		fprintf(stderr,"Error: readsys - hyperfine - int conversion failure\n");
+    		exit(1);
+    	}
+    	if (n1 < 1 || n1 > ss->nspins || n2 < 1 || n2 > ss->nspins) {
+    		fprintf(stderr,"Error: spinsys: hyperfine %d %d out of defined elements range\n",n1,n2);
+    		exit(1);
+    	}
+    	if (hyperfine_exist(s,n1,n2) >= 0) {
+    		fprintf(stderr,"Error: readsys: hyperfine already exists for elements (%d, %d)\n",n1, n2);
+    		exit(1);
+    	}
+    	if ( (ss->iso[n1]->number != 0) && (ss->iso[n2]->number != 0) ) {
+    		fprintf(stderr,"Error: readsys: none of hyperfine elements %d and %d are electron\n", n1, n2);
+    		exit(1);
+    	}
+    	if ( (ss->iso[n1]->number == 0) && (ss->iso[n2]->number == 0) ) {
+    		fprintf(stderr,"Error: readsys: both hyperfine elements %d and %d are electrons\n", n1, n2);
+    		exit(1);
+    	}
+    	for (j=2; j<NN; j++) {
+    		if (Tcl_GetDoubleFromObj(interp,vals[j],&(data[j-2])) != TCL_OK) {
+    			fprintf(stderr,"Error: readsys - hyperfine - double conversion failure\n");
+    			exit(1);
+    		}
+    	}
+    	if (fabs(data[0]) > TINY) Jiso = 1; else Jiso = 0;
+    	if (fabs(data[1]) > TINY) {
+    		Jani = 1;
+    		Naniso++;
+    		HQ_isdiag = 0;
+    		s->Hint_isdiag = 0;
+    		if (s->frame != LABFRAME) s->frame = DNPFRAME;
+    	}	else {
+    		Jani = 0;
+    	}
+    	if ( Jani + Jiso == 0) continue;
+    	s->HF[(s->nHF)++] = hfptr = (Hyperfine*)malloc(sizeof(Hyperfine));
+    	if (ss->iso[n1]->number == 0) {  // n1 is electron
+    		hfptr->nuc[0] = n1; hfptr->nuc[1] = n2;
+    	} else {                         // n2 is electron
+    		hfptr->nuc[0] = n2; hfptr->nuc[1] = n1;
+    	}
+    	hfptr->iso = data[0]*2.0*M_PI; hfptr->delta = data[1]*2.0*M_PI; hfptr->eta = data[2];
+    	hfptr->pas[0] = data[3]; hfptr->pas[1] = data[4]; hfptr->pas[2] = data[5];
+    	hfptr->blk_Tiso = NULL; hfptr->blk_T = NULL; hfptr->blk_Ta = NULL; hfptr->blk_Tb = NULL;
+    	hfptr->T2q[0] = hfptr->T2q[1] = hfptr->T2q[2] = hfptr->T2q[3] = hfptr->T2q[4] = NULL;
+    	if (Jani) {
+    		hfptr->Rmol = Dtensor2(hfptr->delta*2.0, hfptr->eta);
+    		hfptr->Rmol = wig2roti(hfptr->Rmol,hfptr->pas[0],hfptr->pas[1],hfptr->pas[2]);
+    	} else {
+    		hfptr->Rmol = NULL;
+    	}
+        if (ver) {
+          printf( "Hyperfine coupling between electron %d and nucleus %d\n",hfptr->nuc[0],hfptr->nuc[1]);
+          printf( "  isotropic value        : %g Hz\n",hfptr->iso/2.0/M_PI);
+          printf( "  anisotropic value      : %g Hz\n",hfptr->delta/2.0/M_PI);
+          printf( "  asymmetry              : %g \n",hfptr->eta);
+          printf( "  euler angles of tensor :  (%g,%g,%g) degrees\n",hfptr->pas[0],hfptr->pas[1],hfptr->pas[2]);
+        }
+    	continue;
     }
     fprintf(stderr,"Error: unknown identifier '%s' in spinsys, must be one of\n",names[i]);
     fprintf(stderr,"       channels, nuclei, shift, dipole, jcoupling, quadrupole,\n");
@@ -833,7 +972,7 @@ void readsys(Tcl_Interp* interp,Sim_info* s)
   }
 
   // in labframe we do not use H assembly and block_diag
-  if (s->labframe == 1) {
+  if (s->frame == LABFRAME) {
 	  s->Hassembly = 0;
 	  s->block_diag = 0;
 	  s->Hint_isdiag = 0;
@@ -881,7 +1020,7 @@ void readsys(Tcl_Interp* interp,Sim_info* s)
 	  } else {
 		  for (i=0; i<5; i++) s->HQ[i] = NULL;
 	  }
-	  if (s->labframe == 1) { // labframe simulation: add Zeeman terms for all nuclei
+	  if (s->frame == LABFRAME) { // labframe simulation: add Zeeman terms for all nuclei
 		  for (i=1; i<=s->ss->nspins; i++) {
 			  mat_double *dumIz = Iz_ham(s,i);
 			  blk_dm_multod_diag(s->Hiso,dumIz,ss_gamma(s->ss,i)*s->specfreq/ss_gamma1H()*2*M_PI);
@@ -907,7 +1046,7 @@ void readsys(Tcl_Interp* interp,Sim_info* s)
 				  free_double_matrix(csptr->T);
 				  csptr->T = NULL;
 			  }
-			  if (s->labframe == 1) {
+			  if (s->frame == LABFRAME) {
 				  csptr->T2q[0] = csptr->T2q[4] = NULL; // T2-2 and T22 are zero for CSA
 				  csptr->T2q[1] = Im_real(s,csptr->nuc); dm_muld(csptr->T2q[1],0.5);
 				  csptr->T2q[2] = csptr->T; csptr->T = NULL; dm_muld(csptr->T2q[2],sqrt(2.0/3.0));
@@ -942,7 +1081,7 @@ void readsys(Tcl_Interp* interp,Sim_info* s)
 			  free_blk_mat_double(ddptr->blk_T);
 			  ddptr->blk_T = NULL;
 		  }
-		  if (s->labframe == 1) {
+		  if (s->frame == LABFRAME) {
 			  mat_double *md1, *md2, *md3, *md4;
 			  md1 = Im_real(s,n1); md2 = Im_real(s,n2); md3 = Iz_ham(s,n2);
 			  ddptr->T2q[0] = dm_mul(md1,md2); dm_muld(ddptr->T2q[0],0.5);
@@ -994,7 +1133,7 @@ void readsys(Tcl_Interp* interp,Sim_info* s)
 				  free_blk_mat_double(jptr->blk_T);
 				  jptr->blk_T = NULL;
 			  }
-			  if (s->labframe == 1) {
+			  if (s->frame == LABFRAME) {
 				  fprintf(stderr,"Error: labframe simulations do not consider J anisotropy explicitly\n");
 				  exit(1);
 			  }
@@ -1025,7 +1164,7 @@ void readsys(Tcl_Interp* interp,Sim_info* s)
 //			  dm_print(qptr->T3c,"T3c");
 //			  exit(1);
 		  }
-		  if (s->labframe == 1) {
+		  if (s->frame == LABFRAME) {
 			  mat_double *md1, *md2;
 			  md1 = Im_real(s,qptr->nuc); md2 = Iz_ham(s,qptr->nuc);
 			  qptr->T2q[0] = dm_mul(md1,md1); dm_muld(qptr->T2q[0],0.5);
@@ -1086,7 +1225,77 @@ void readsys(Tcl_Interp* interp,Sim_info* s)
 			  }
 		  }
 	  }
-  // end of common Hamiltonian creation
+	  // G-tensor for electrons
+	  for (i=0; i<s->nG; i++) {
+		  //printf("creating G-tensor %d\n",i);
+		  gptr = s->G[i];
+		  gptr->T = Iz_ham(s,gptr->nuc);
+		  dm_print(gptr->T,"operator T");
+		  if (fabs(gptr->iso) > TINY ) {
+			  blk_dm_multod_diag(s->Hiso,gptr->T,gptr->iso);
+		  }
+		  if (fabs(gptr->delta) > TINY) {
+			  if (s->Hassembly) {
+				  blk_dm_multod_diag(s->HQ[0],gptr->T,gptr->Rmol[3].re);
+				  blk_dm_multod_diag(s->HQ[1],gptr->T,gptr->Rmol[4].re);
+				  blk_dm_multod_diag(s->HQ[2],gptr->T,gptr->Rmol[4].im);
+				  blk_dm_multod_diag(s->HQ[3],gptr->T,gptr->Rmol[5].re);
+				  blk_dm_multod_diag(s->HQ[4],gptr->T,gptr->Rmol[5].im);
+				  free_double_matrix(gptr->T);
+				  gptr->T = NULL;
+			  }
+			  if (s->frame == LABFRAME) {
+				  gptr->T2q[0] = gptr->T2q[4] = NULL; // T2-2 and T22 are zero for CSA
+				  gptr->T2q[1] = Im_real(s,gptr->nuc); dm_muld(gptr->T2q[1],0.5);
+				  gptr->T2q[2] = gptr->T; gptr->T = NULL; dm_muld(gptr->T2q[2],sqrt(2.0/3.0));
+				  gptr->T2q[3] = Ip_real(s,gptr->nuc); dm_muld(gptr->T2q[3],-0.5);
+				  // readjust Rmol to agree with T2q scalings
+				  cv_muld(gptr->Rmol,sqrt(3.0/2.0));
+			  }
+			  // note T2q[] are NULLed above in creating Rmol
+		  } else {
+			  free_double_matrix(gptr->T);
+			  gptr->T = NULL;
+			  //gptr->T2q[0] = gptr->T2q[1] = gptr->T2q[2] = gptr->T2q[3] = gptr->T2q[4] = NULL;
+		  }
+	  }
+	  // Hyperfine couplings for electrons
+	  for (i=0; i<s->nHF; i++) {
+		  //printf("creating Hyperfine coupling %d\n",i);
+		  hfptr = s->HF[i];
+		  n1 = hfptr->nuc[0]; // this is electron
+		  n2 = hfptr->nuc[1];
+		  if (fabs(hfptr->iso)> TINY) {
+			  hfptr->blk_Tiso = IzIz_sqrt2by3(s,n1,n2);
+			  blk_dm_print(hfptr->blk_Tiso,"oparator Tiso");
+			  blk_dm_multod(s->Hiso,hfptr->blk_Tiso,hfptr->iso/SQRT2BY3);
+			  free_blk_mat_double(hfptr->blk_Tiso);
+			  hfptr->blk_Tiso = NULL;
+		  }
+		  if (fabs(hfptr->delta) > TINY) {
+			  hfptr->blk_T = IzIz_sqrt2by3(s,n1,n2);
+			  blk_dm_print(hfptr->blk_T,"oparator T (=T20)");
+			  if (s->Hassembly) {
+				  blk_dm_multod(s->HQ[0],hfptr->blk_T,hfptr->Rmol[3].re);
+				  blk_dm_multod(s->HQ[1],hfptr->blk_T,hfptr->Rmol[4].re);
+				  blk_dm_multod(s->HQ[2],hfptr->blk_T,hfptr->Rmol[4].im);
+				  blk_dm_multod(s->HQ[3],hfptr->blk_T,hfptr->Rmol[5].re);
+				  blk_dm_multod(s->HQ[4],hfptr->blk_T,hfptr->Rmol[5].im);
+				  free_blk_mat_double(hfptr->blk_T);
+				  hfptr->blk_T = NULL;
+			  }
+			  fill_hyperfine_Tab(s,hfptr);
+			  blk_dm_print(hfptr->blk_Ta,"oparator Ta (=T2-1)");
+			  blk_dm_print(hfptr->blk_Tb,"oparator Tb (=T2+1)");
+			  if (s->frame == LABFRAME) {
+				  fprintf(stderr,"Error: labframe simulations do not consider J anisotropy explicitly\n");
+				  exit(1);
+			  }
+		  }
+		  hfptr->T2q[0] = hfptr->T2q[1] = hfptr->T2q[2] = hfptr->T2q[3] = hfptr->T2q[4] = NULL;
+	  }
+
+	  // end of common Hamiltonian creation
 
 
   if (ver) {
@@ -1104,7 +1313,7 @@ void readsys(Tcl_Interp* interp,Sim_info* s)
 	  } else {
 		  printf(" not be used\n");
 	  }
-	  if (s->labframe == 1) {
+	  if (s->frame == LABFRAME) {
 		  printf("Simulation will be carried on in laboratory frame.\n");
 	  }
   }

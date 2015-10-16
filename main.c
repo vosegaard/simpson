@@ -43,7 +43,7 @@
 #include "OCroutines.h"
 #include "rfshapes.h"
 #include "cryst.h"
-
+#include "distortions.h"
 #include "pthread_barrier_mac.h"
 
 int verbose = 0;
@@ -80,6 +80,7 @@ int main (int argc,char *argv[])
 
 	OCpar.isinit = 0;
 	RFshapes_init();
+	DOPs_init();
 
 #ifdef MPI
    MPI_Init(NULL, NULL);

@@ -132,6 +132,7 @@ void thread_work(int thread_id, Tcl_Interp *interp){
   while (1) {
 	  // WARNING!!! This works ONLY IF all MPI slaves have the same number of threads!!!
 	  Np_start = glob_info.mpi_rank + thread_id*glob_info.mpi_size + glob_info.mpi_size*glob_info.num_threads*i;
+	  //printf("Np_start = %d, thrd.Ntot = %d\n",Np_start, thrd.Ntot);
 	  if (Np_start >= thrd.Ntot) break;
 	  ncr_start = Np_start/thrd.nrf/thrd.nz/Naveval;
 	  nrf_start = (Np_start-ncr_start*thrd.nrf*thrd.nz*Naveval)/thrd.nz/Naveval;

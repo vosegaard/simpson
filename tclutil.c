@@ -43,6 +43,7 @@
 	void tclcmd_pulse(Tcl_Interp* interp);
 	void tclcmd_OCroutines(Tcl_Interp* interp);
 	void tclcmd_spinach(Tcl_Interp* interp);
+	void tclcmd_distortions(Tcl_Interp* interp);
 
 void TclSimpsonInterpInit(Tcl_Interp* interp)
 {
@@ -68,6 +69,7 @@ void TclSimpsonInterpInit(Tcl_Interp* interp)
 	tclcmd_pulse(interp);
 	tclcmd_OCroutines(interp);
 	tclcmd_spinach(interp);
+	tclcmd_distortions(interp);
 
 	DEBUGPRINT("Initialize: all done.\n");
 }
@@ -97,6 +99,7 @@ void TclSlaveInterpInit(Tcl_Interp* interp)
 	tclcmd_pulse(interp);
 	tclcmd_OCroutines(interp);
 	tclcmd_spinach(interp);
+	tclcmd_distortions(interp);
 
 	DEBUGPRINT("Initialize slave: all done.\n");
 
