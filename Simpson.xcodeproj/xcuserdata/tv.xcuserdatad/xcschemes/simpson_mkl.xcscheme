@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "0600"
+   LastUpgradeVersion = "0630"
    version = "1.3">
    <BuildAction
       parallelizeBuildables = "YES"
@@ -14,23 +14,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "B1ECDC4717B504DF00F68BD3"
-               BuildableName = "simpson"
-               BlueprintName = "simpson"
-               ReferencedContainer = "container:Simpson-4.1.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "B1ECDC4717B504DF00F68BD3"
-               BuildableName = "simpson"
-               BlueprintName = "simpson"
+               BlueprintIdentifier = "B1DA85661B0D925200B4C276"
+               BuildableName = "simpson_mkl"
+               BlueprintName = "simpson_mkl"
                ReferencedContainer = "container:Simpson.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -46,10 +32,10 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "B1ECDC4717B504DF00F68BD3"
-            BuildableName = "simpson"
-            BlueprintName = "simpson"
-            ReferencedContainer = "container:Simpson-4.1.xcodeproj">
+            BlueprintIdentifier = "B1DA85661B0D925200B4C276"
+            BuildableName = "simpson_mkl"
+            BlueprintName = "simpson_mkl"
+            ReferencedContainer = "container:Simpson.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
    </TestAction>
@@ -66,10 +52,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "B1ECDC4717B504DF00F68BD3"
-            BuildableName = "simpson"
-            BlueprintName = "simpson"
-            ReferencedContainer = "container:Simpson-4.1.xcodeproj">
+            BlueprintIdentifier = "B1DA85661B0D925200B4C276"
+            BuildableName = "simpson_mkl"
+            BlueprintName = "simpson_mkl"
+            ReferencedContainer = "container:Simpson.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <AdditionalOptions>
@@ -85,10 +71,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "B1ECDC4717B504DF00F68BD3"
-            BuildableName = "simpson"
-            BlueprintName = "simpson"
-            ReferencedContainer = "container:Simpson-4.1.xcodeproj">
+            BlueprintIdentifier = "B1DA85661B0D925200B4C276"
+            BuildableName = "simpson_mkl"
+            BlueprintName = "simpson_mkl"
+            ReferencedContainer = "container:Simpson.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

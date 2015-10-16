@@ -10,34 +10,29 @@
 	<string>Simpson</string>
 	<key>IDESourceControlProjectOriginsDictionary</key>
 	<dict>
-		<key>b71c9ff0-8718-99d4-ebca-40404cc4ab5c++505</key>
-		<string>https://simpson.googlecode.com/svn/trunk</string>
+		<key>1BB831DB27A6F229198233695EA101F72474102C</key>
+		<string>https://github.com/vosegaard/simpson</string>
 	</dict>
 	<key>IDESourceControlProjectPath</key>
-	<string>Simpson/Simpson.xcodeproj</string>
+	<string>Simpson.xcodeproj</string>
 	<key>IDESourceControlProjectRelativeInstallPathDictionary</key>
 	<dict>
-		<key>b71c9ff0-8718-99d4-ebca-40404cc4ab5c++505</key>
-		<string>../../..</string>
-	</dict>
-	<key>IDESourceControlProjectRepositoryRootDictionary</key>
-	<dict>
-		<key>b71c9ff0-8718-99d4-ebca-40404cc4ab5c++505</key>
-		<string>https://simpson.googlecode.com/svn</string>
+		<key>1BB831DB27A6F229198233695EA101F72474102C</key>
+		<string>../..</string>
 	</dict>
 	<key>IDESourceControlProjectURL</key>
-	<string>https://simpson.googlecode.com/svn/trunk/Simpson/Simpson.xcodeproj</string>
+	<string>https://github.com/vosegaard/simpson</string>
 	<key>IDESourceControlProjectVersion</key>
 	<integer>111</integer>
 	<key>IDESourceControlProjectWCCIdentifier</key>
-	<string>b71c9ff0-8718-99d4-ebca-40404cc4ab5c++505</string>
+	<string>1BB831DB27A6F229198233695EA101F72474102C</string>
 	<key>IDESourceControlProjectWCConfigurations</key>
 	<array>
 		<dict>
 			<key>IDESourceControlRepositoryExtensionIdentifierKey</key>
-			<string>public.vcs.subversion</string>
+			<string>public.vcs.git</string>
 			<key>IDESourceControlWCCIdentifierKey</key>
-			<string>b71c9ff0-8718-99d4-ebca-40404cc4ab5c++505</string>
+			<string>1BB831DB27A6F229198233695EA101F72474102C</string>
 			<key>IDESourceControlWCCName</key>
 			<string>simpson</string>
 		</dict>
