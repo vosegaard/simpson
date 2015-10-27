@@ -2284,7 +2284,8 @@ mat_complx * blk_cm_mul_v2(mat_complx *cm, blk_mat_complx *blkm)
 					for (j=0; j<blkm->Nblocks; j++) {
 						NNr = blkm->blk_dims[j];
 						// kdyz NNr==1 tak to je radka*blk_matice=radka, stejne jako matice*blk_matice=matice
-						cblas_zgemm(CblasColMajor,CblasNoTrans,CblasNoTrans,NNr,NN,NNr,&Cunit,cm->data+pr+pc*dim,dim,bm->data,NN,&Cnull,res->data+pr+pc*dim,dim);
+						//cblas_zgemm(CblasColMajor,CblasNoTrans,CblasNoTrans,NNr,NN,NNr,&Cunit,cm->data+pr+pc*dim,dim,bm->data,NN,&Cnull,res->data+pr+pc*dim,dim);
+						cblas_zgemm(CblasColMajor,CblasNoTrans,CblasNoTrans,NNr,NN,NN,&Cunit,cm->data+pr+pc*dim,dim,bm->data,NN,&Cnull,res->data+pr+pc*dim,dim);
 						pr += NNr;
 					}
 					break;
@@ -2397,7 +2398,6 @@ void update_propagator(blk_mat_complx *U, blk_mat_complx *dU, Sim_info *sim, Sim
 
 	int i;
 	mat_complx *mU, *mdU;
-
 
 	if (wsp == NULL) {
 		// this is used only within _pulse_simple  and _delay_simple with no base change
