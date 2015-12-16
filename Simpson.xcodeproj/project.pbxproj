@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B115891C1C21A32F008E60B0 /* distortions.c in Sources */ = {isa = PBXBuildFile; fileRef = B115891B1C21A32F008E60B0 /* distortions.c */; };
 		B1A43DC21ADE242A00C8686F /* libtcl8.6.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = B1C6AB2619F444A000D788F0 /* libtcl8.6.dylib */; };
 		B1DA85681B0D925200B4C276 /* allocation.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC5417B505D700F68BD3 /* allocation.c */; };
 		B1DA85691B0D925200B4C276 /* auxmath.c in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDC5617B505D700F68BD3 /* auxmath.c */; };
@@ -110,6 +111,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B115891B1C21A32F008E60B0 /* distortions.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = distortions.c; sourceTree = SOURCE_ROOT; };
+		B115891D1C21A339008E60B0 /* distortions.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = distortions.h; sourceTree = SOURCE_ROOT; };
 		B1C6AB2619F444A000D788F0 /* libtcl8.6.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libtcl8.6.dylib; path = /opt/local/lib/libtcl8.6.dylib; sourceTree = "<absolute>"; };
 		B1DA858F1B0D925200B4C276 /* simpson_mkl */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = simpson_mkl; sourceTree = BUILT_PRODUCTS_DIR; };
 		B1ECDC4817B504DF00F68BD3 /* simpson */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = simpson; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -221,6 +224,8 @@
 		B1ECDC4A17B504DF00F68BD3 /* Simpson */ = {
 			isa = PBXGroup;
 			children = (
+				B115891D1C21A339008E60B0 /* distortions.h */,
+				B115891B1C21A32F008E60B0 /* distortions.c */,
 				B1F6C25517D5EB4800D455FF /* pthread_barrier_mac.c */,
 				B1F6C25617D5EB4800D455FF /* pthread_barrier_mac.h */,
 				B1ECDC5417B505D700F68BD3 /* allocation.c */,
@@ -416,6 +421,7 @@
 				B1ECDC9817B505D700F68BD3 /* crystdat.c in Sources */,
 				B1ECDC9917B505D700F68BD3 /* fft.c in Sources */,
 				B1ECDC9A17B505D700F68BD3 /* fidcalc.c in Sources */,
+				B115891C1C21A32F008E60B0 /* distortions.c in Sources */,
 				B1ECDC9B17B505D700F68BD3 /* ftools.c in Sources */,
 				B1ECDC9C17B505D700F68BD3 /* ham.c in Sources */,
 				B1ECDC9D17B505D700F68BD3 /* iodata.c in Sources */,
