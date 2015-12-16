@@ -73,6 +73,22 @@ typedef struct _Mixing {
 	blk_mat_double *Ta, *Tb;
 } Mixing;
 
+typedef struct _Gtensor {
+	int nuc;
+	double iso, delta, eta, pas[3];
+	mat_double *T;
+	complx *Rmol;
+	mat_double *T2q[5];
+} Gtensor;
+
+typedef struct _Hyperfine {
+	int nuc[2];
+	double iso, delta, eta, pas[3];
+	blk_mat_double *blk_Tiso, *blk_T, *blk_Ta, *blk_Tb;
+	complx *Rmol;
+	mat_double *T2q[5];
+} Hyperfine;
+
 //typedef struct _Perms {
 //	int *permvec;
 //	int *dims;
@@ -88,8 +104,10 @@ typedef struct _Sim_info {
   Jcoupling **J;
   Quadrupole **Q;
   Mixing **MIX;
-  int nCS, nDD, nJ, nQ, nMIX;
-  double specfreq, wr, sw, sw1, brl, gamma_zero;
+  Gtensor **G;
+  Hyperfine **HF;
+  int nCS, nDD, nJ, nQ, nMIX, nG, nHF;
+  double specfreq, Bzero, wr, sw, sw1, brl, gamma_zero;
   int np, ni, ntot, ngamma, matdim, obs_nuc, imethod, crystfile_from, crystfile_to;
   char crystfile[256],rfproffile[256],pulsename[64],parname[256],targetcrystfile[256];
   /* switches */
@@ -118,7 +136,7 @@ typedef struct _Sim_info {
   fftw_plan *fftw_plans;
   // testing to take average value instead of initial point Hamiltonian
   int do_avg;
-  int labframe;
+  int frame;
 } Sim_info;
 
 #define MAXSTO 1000
@@ -143,7 +161,9 @@ typedef struct _Sim_wsp {
     complx **DD_Rrot, **DD_Rlab;
     complx **Q_Rrot, **Q_Rlab;
     complx **J_Rrot, **J_Rlab;
-    int *CS_used, *DD_used, *Q_used, *J_used, *spinused;
+    complx **G_Rrot, **G_Rlab;
+    complx **HF_Rrot, **HF_Rlab;
+    int *CS_used, *DD_used, *Q_used, *J_used, *G_used, *HF_used, *spinused;
     blk_mat_complx *STO[ACQBLOCK_STO_END];
     mat_complx *matrix[ACQBLOCK_STO_END];
     double   STO_tproplength_usec[ACQBLOCK_STO_END], STO_tpropstart_usec[ACQBLOCK_STO_END], STO_brl[ACQBLOCK_STO_END];
@@ -171,11 +191,15 @@ typedef struct _Sim_wsp {
     Dipole **DD;
     Jcoupling **J;
     Quadrupole **Q;
+    Gtensor **G;
+    Hyperfine **HF;
     int thread_id, cryst_idx, ig;
     int *FWTASG_irow, *FWTASG_icol;
     double dw;
     // labframe
     mat_complx *Hlab, *Hrflab;
+    // complex blockdiagonalized Hamiltonian
+    blk_mat_complx *Hcplx, *Hrf_blk;
 } Sim_wsp;
 
 

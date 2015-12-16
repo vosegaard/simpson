@@ -1175,6 +1175,71 @@ void fill_Tabmix_dipole(Sim_info *sim, Mixing *mptr)
 	free_double_matrix(a);
 	free_double_matrix(b);
 }
+
+void fill_hyperfine_Tab(Sim_info *sim, Hyperfine *hfptr)
+{
+	blk_mat_double *res;
+	mat_double *a, *b, *c;
+	int nb,dim,i,j;
+
+	if (sim->basis == 0) {
+		a = Im_real(sim,hfptr->nuc[1]);
+		b = Ip_real(sim,hfptr->nuc[1]);
+		c = Iz_ham(sim,hfptr->nuc[0]); // this is electron
+		dm_multo(a,c);
+		dm_multo(b,c);
+		free_double_matrix(c);
+		res = create_blk_mat_double(sim->matdim,1,NULL,sim->sparse ? MAT_SPARSE : MAT_DENSE,sim->basis);
+		dm_zero(res->m);
+		dm_multod(res->m,a,-0.5);
+		free_double_matrix(a);
+		hfptr->blk_Ta = res;
+		res = create_blk_mat_double(sim->matdim,1,NULL,sim->sparse ? MAT_SPARSE : MAT_DENSE,sim->basis);
+		dm_zero(res->m);
+		dm_multod(res->m,b,0.5);
+		free_double_matrix(b);
+		hfptr->blk_Tb = res;
+	} else {
+		// when blocking is active:
+		a = Im_real(sim,hfptr->nuc[1]);
+		b = Ip_real(sim,hfptr->nuc[1]);
+		c = Iz_ham(sim,hfptr->nuc[0]); // this is electron
+		dm_multo(a,c);
+		dm_multo(b,c);
+		free_double_matrix(c);
+		dm_permute(a,sim->perm_table[0+sim->basis*sim->Nbasis]);
+		dm_permute(b,sim->perm_table[0+sim->basis*sim->Nbasis]);
+		hfptr->blk_Ta = create_blk_mat_double(sim->matdim,LEN(sim->dims_table[sim->basis]),sim->dims_table[sim->basis],sim->sparse ? MAT_SPARSE : MAT_DENSE,sim->basis);
+		hfptr->blk_Tb = create_blk_mat_double(sim->matdim,LEN(sim->dims_table[sim->basis]),sim->dims_table[sim->basis],sim->sparse ? MAT_SPARSE : MAT_DENSE,sim->basis);
+		int sft = 0;
+		for (nb=0; nb < hfptr->blk_Ta->Nblocks; nb++) {
+			dim = hfptr->blk_Ta->blk_dims[nb];
+			if (dim == 1) {
+				hfptr->blk_Ta->m[nb].data[0] = dm_getelem(a,sft+1,sft+1);
+				hfptr->blk_Tb->m[nb].data[0] = dm_getelem(b,sft+1,sft+1);
+			} else {
+				c = dm_extract_block(a,sft,sft,dim,dim);
+				dm_zero(&(hfptr->blk_Ta->m[nb]));
+				if (c != NULL) {
+					c->basis = sim->basis;
+					dm_multod(&(hfptr->blk_Ta->m[nb]),c,-0.5);
+					free_double_matrix(c);
+				}
+				c = dm_extract_block(b,sft,sft,dim,dim);
+				dm_zero(&(hfptr->blk_Tb->m[nb]));
+				if (c != NULL) {
+					c->basis = sim->basis;
+					dm_multod(&(hfptr->blk_Tb->m[nb]),c,0.5);
+					free_double_matrix(c);
+				}
+			}
+			sft += dim;
+		}
+		free_double_matrix(a);
+		free_double_matrix(b);
+	}
+}
+
 /* end of readsys stuff */
 
 #ifdef DEBUG

@@ -197,13 +197,35 @@ void store_OCfilter(Sim_wsp *wsp,int num)
   wsp->OC_props[i] = obj;
 }
 
+char* my_strtok_r(char *str, const char *delim, char **nextp)
+{
+    char *ret;
+
+    //if (str == NULL) str = *nextp;
+    assert(str != NULL);
+    // clear initial sequence of delimiters
+    str += strspn(str, delim);
+    if (*str == '\0') {
+        return NULL;
+    }
+    ret = str;
+    str += strcspn(str, delim);
+    // if not at the end of string put there end of string
+    if (*str) {
+        *str++ = '\0';
+    }
+    *nextp = str;
+
+    return ret;
+}
+
 /****
  * check and set switch for optimization of propagators
  *  (in that mode cummulative propagators are calculated)
  ****/
 void test_pulseq_for_acqOC_prop(Tcl_Interp *interp)
 {
-  char *res, *lin, *dum;
+  char *res, *lin, *dum, *chptr;
   char buf[256],pulseq[128];
   int l=0;
   
@@ -221,7 +243,8 @@ void test_pulseq_for_acqOC_prop(Tcl_Interp *interp)
   res = Tcl_GetStringResult(interp);
   //printf("%s\n///\n",res);
 
-  lin = strtok(res,"\n");
+  lin = my_strtok_r(res,"\n",&chptr);
+  //printf("First line: '%s'\n///\n",lin);
   while ( lin != NULL) {
      l++;
      dum = strstr(lin,"oc_acq_prop");
@@ -243,7 +266,8 @@ void test_pulseq_for_acqOC_prop(Tcl_Interp *interp)
         	OCpar.gradmodeprop++;
         }
      }  
-     lin = strtok(NULL,"\n");
+     lin = my_strtok_r(chptr,"\n",&chptr);
+     //printf("next line: '%s'\n///\n",lin);
   }
   
   if (OCpar.gradmodeprop > 1) {
@@ -1097,7 +1121,7 @@ void _pulse_and_zgrad_shapedOCprops(Sim_info *sim, Sim_wsp *wsp, char *code, int
   mat_complx *lam, *cmdum=NULL;
   complx cc;
   int *gridx, *chnl, *slt;
-  char code, *dumstr, mxcd[128], *pointer;
+  char code, *dumstr, mxcd[128], *chptr;
 
   //N = sim->matdim;
   /* printf("in gradOC_hermit\n"); */
@@ -1140,7 +1164,7 @@ void _pulse_and_zgrad_shapedOCprops(Sim_info *sim, Sim_wsp *wsp, char *code, int
 		  /* calculate gradients */
 		  /* printf("%d is G: %s\n",i,OCpar.mx_code[i]); */
 		  /* disassemble the code */
-		  dumstr = strtok_r(mxcd," ", &pointer);
+		  dumstr = my_strtok_r(mxcd," ",&chptr);
 		  if (sscanf(dumstr,"G%dE%d", &Nelem, &Nch) != 2) {
 			  fprintf(stderr,"gradOC_hermit can't decompose first part of code\n");
 			  exit(1);
@@ -1149,7 +1173,7 @@ void _pulse_and_zgrad_shapedOCprops(Sim_info *sim, Sim_wsp *wsp, char *code, int
 		  chnl = int_vector(Nch);
 		  slt = int_vector(Nch);
 		  for (j=1; j<=Nch; j++) {
-			  dumstr = strtok_r(pointer, " ", &pointer);
+			  dumstr = my_strtok_r(chptr, " ",&chptr);
 			  if ( sscanf(dumstr,"I%dC%d",&idx, &chan) != 2 ) {
 				  fprintf(stderr,"gradOC_hermit - can't read grad code number %d\n",j);
 				  exit(1);
@@ -1328,7 +1352,7 @@ void gradOC_hermit_2(Sim_info *sim, Sim_wsp *wsp)
   mat_complx *lam, *tmpM=NULL, *tmpMM=NULL;
   complx cc, cc1;
   int *gridx, *chnl, *slt;
-  char code, *dumstr, mxcd[128], *pointer;
+  char code, *dumstr, mxcd[128], *chptr;
   
   /* printf("in gradOC_nonhermit\n"); */
   //N = sim->matdim;
@@ -1373,7 +1397,7 @@ void gradOC_hermit_2(Sim_info *sim, Sim_wsp *wsp)
 		  /* calculate gradients */
 		  /* printf("%d is G: %s\n",i,OCpar.mx_code[i]); */
 		  /* disassemble the code */
-		  dumstr = strtok_r(mxcd," ", &pointer);
+		  dumstr = my_strtok_r(mxcd," ",&chptr);
 		  if (sscanf(dumstr,"G%dE%d", &Nelem, &Nch) != 2) {
 			  fprintf(stderr,"gradOC_nonhermit can't decompose first part of code\n");
 			  exit(1);
@@ -1382,7 +1406,7 @@ void gradOC_hermit_2(Sim_info *sim, Sim_wsp *wsp)
 		  chnl = int_vector(Nch);
 		  slt = int_vector(Nch);
 		  for (j=1; j<=Nch; j++) {
-			  dumstr = strtok_r(pointer, " ", &pointer);
+			  dumstr = my_strtok_r(chptr, " ", &chptr);
 			  if ( sscanf(dumstr,"I%dC%d",&idx, &chan) != 2 ) {
 				  fprintf(stderr,"gradOC_hermit - can't read grad code number %d\n",j);
 				  exit(1);
@@ -1570,7 +1594,7 @@ void gradOC_prop(Sim_info *sim, Sim_wsp *wsp, int ud)
   mat_complx *pr, *cmx=NULL;
   complx cc, cc1;
   int *gridx, *chnl, *slt;
-  char code, *dumstr, mxcd[128], *pointer;
+  char code, *dumstr, mxcd[128], *chptr;
   
   /* printf("in gradOC_prop\n"); */
   N = sim->matdim;
@@ -1627,7 +1651,7 @@ void gradOC_prop(Sim_info *sim, Sim_wsp *wsp, int ud)
 		/* calculate gradients */
 		  /* printf("%d is G: %s\n",i,OCpar.mx_code[i]); */
 		  /* disassemble the code */
-		  dumstr = strtok_r(mxcd," ", &pointer);
+		  dumstr = my_strtok_r(mxcd," ",&chptr);
 		  if (sscanf(dumstr,"G%dE%d", &Nelem, &Nch) != 2) {
 			  fprintf(stderr,"gradOC_prop can't decompose first part of code\n");
 			  exit(1);
@@ -1636,7 +1660,7 @@ void gradOC_prop(Sim_info *sim, Sim_wsp *wsp, int ud)
 		  chnl = int_vector(Nch);
 		  slt = int_vector(Nch);
 		  for (j=1; j<=Nch; j++) {
-			  dumstr = strtok_r(pointer, " ", &pointer);
+			  dumstr = my_strtok_r(chptr, " ", &chptr);
 			  if ( sscanf(dumstr,"I%dC%d",&idx, &chan) != 2 ) {
 				  fprintf(stderr,"gradOC_prop - can't read grad code number %d\n",j);
 				  exit(1);

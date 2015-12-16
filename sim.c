@@ -123,7 +123,18 @@ Sim_info * sim_initialize(Tcl_Interp* interp)
      proton resonance frequency is negative because gamma for at
      proton is positive. */
   s->specfreq = -f;
-    
+  f = TclGetDouble(interp,"par","field",0,-100001);
+  if (f > -100000) { //i.e. it actually was defined by user
+	  if ( f < TINY ) {
+		  fprintf(stderr,"Error: field must be positive and nonzero\n");
+		  exit(1);
+	  }
+	  s->Bzero = f;
+	  s->specfreq = -ss_gamma1H()*f/(2*M_PI);
+  } else {
+	  s->Bzero = -s->specfreq*2*M_PI/ss_gamma1H();
+  }
+
   s->wr=TclGetDouble(interp,"par","spin_rate",0,0);
   if (s->wr < 0.0) {
      fprintf(stderr,"error: spin_rate cannot be negative\n");
@@ -141,7 +152,7 @@ Sim_info * sim_initialize(Tcl_Interp* interp)
   s->propmethod = 0; // via diagonalization
   s->interpolation = INTERPOL_NOT_USED;
   s->domain = 0; // time domain simulation
-  s->labframe = 0; // rotating frame is default
+  s->frame = ROTFRAME; // rotating frame is default
   obj = Tcl_GetVar2Ex(interp,"par","method",0);
   if (obj != NULL) {
 	  if (Tcl_ListObjGetElements(interp,obj,&objc,&objv) != TCL_OK) {
@@ -197,7 +208,7 @@ Sim_info * sim_initialize(Tcl_Interp* interp)
 			  s->domain = 1; // calculations will be in frequency domain
 			  s->imethod++;
 		  } else if (!strncmp(buf,"labframe",8)) {
-			  s->labframe = 1;
+			  s->frame = LABFRAME;
 		  } else {
 			  fprintf(stderr,"Error: method option '%s' not known.\n",buf);
 			  fprintf(stderr,"Must be one of : direct/idirect/gcompute/igcompute,\n");
@@ -500,6 +511,8 @@ Sim_info * sim_initialize(Tcl_Interp* interp)
   return s;
 }
 
+//#define DEBUGPRINT printf
+
 void sim_destroy(Sim_info* s, int this_is_copy)
 {
   int i, ii;
@@ -569,6 +582,32 @@ void sim_destroy(Sim_info* s, int this_is_copy)
 	  free((char*)(ptr));
   }
   free(s->MIX);
+
+  for (i=0; i<s->nG; i++) {
+	  Gtensor *ptr = s->G[i];
+	  if (ptr->T) free_double_matrix(ptr->T);
+	  free_complx_vector(ptr->Rmol);
+	  for (ii=0; ii<5; ii++) {
+		  if (ptr->T2q[ii] != NULL) free_double_matrix(ptr->T2q[ii]);
+	  }
+	  free((char*)(ptr));
+  }
+  free(s->G);
+
+  for (i=0; i<s->nHF; i++) {
+	  Hyperfine *ptr = s->HF[i];
+	  if (ptr->blk_Tiso) free_blk_mat_double(ptr->blk_Tiso);
+	  if (ptr->blk_T) free_blk_mat_double(ptr->blk_T);
+	  if (ptr->blk_Ta) free_blk_mat_double(ptr->blk_Ta);
+	  if (ptr->blk_Tb) free_blk_mat_double(ptr->blk_Tb);
+	  free_complx_vector(ptr->Rmol);
+	  for (ii=0; ii<5; ii++) {
+		  if (ptr->T2q[ii] != NULL) free_double_matrix(ptr->T2q[ii]);
+	  }
+	  free((char*)(ptr));
+  }
+  free(s->HF);
+
   DEBUGPRINT("SIM_DESTROY 7\n");
   if (s->fstart) free_complx_matrix(s->fstart);
   DEBUGPRINT("SIM_DESTROY 8\n");
@@ -969,10 +1008,35 @@ Sim_wsp * wsp_initialize(Sim_info *s)
 			wsp->J_Rlab[i] = complx_vector(5);
 		}
 	}
+	wsp->G_Rlab = (complx**)malloc(sizeof(complx*)*s->nG);
+	wsp->G_Rrot = (complx**)malloc(sizeof(complx*)*s->nG);
+	for (i=0; i<s->nG; i++) {
+		if (s->G[i]->Rmol == NULL) {
+			wsp->G_Rrot[i] = NULL;
+			wsp->G_Rlab[i] = NULL;
+		} else {
+			wsp->G_Rrot[i] = complx_vector(5);
+			wsp->G_Rlab[i] = complx_vector(5);
+		}
+	}
+	wsp->HF_Rlab = (complx**)malloc(sizeof(complx*)*s->nHF);
+	wsp->HF_Rrot = (complx**)malloc(sizeof(complx*)*s->nHF);
+	for (i=0; i<s->nHF; i++) {
+		if (s->HF[i]->Rmol == NULL) {
+			wsp->HF_Rrot[i] = NULL;
+			wsp->HF_Rlab[i] = NULL;
+		} else {
+			wsp->HF_Rrot[i] = complx_vector(5);
+			wsp->HF_Rlab[i] = complx_vector(5);
+		}
+	}
+
 	wsp->CS_used = (int*)malloc(sizeof(int)*s->nCS);
 	wsp->DD_used = (int*)malloc(sizeof(int)*s->nDD);
 	wsp->J_used = (int*)malloc(sizeof(int)*s->nJ);
 	wsp->Q_used = (int*)malloc(sizeof(int)*s->nQ);
+	wsp->G_used = (int*)malloc(sizeof(int)*s->nG);
+	wsp->HF_used = (int*)malloc(sizeof(int)*s->nHF);
 	wsp->spinused = NULL;
 
 	/* rf channels and offsets */
@@ -1129,6 +1193,10 @@ Sim_wsp * wsp_initialize(Sim_info *s)
     for (i=0; i<s->nJ; i++) wsp->J[i] = s->J[i];
     wsp->Q = (Quadrupole **)malloc(s->nQ*sizeof(Quadrupole*));
     for (i=0; i<s->nQ; i++) wsp->Q[i] = s->Q[i];
+    wsp->G = (Gtensor **)malloc(s->nG*sizeof(Gtensor*));
+    for (i=0; i<s->nG; i++) wsp->G[i] = s->G[i];
+    wsp->HF = (Hyperfine **)malloc(s->nHF*sizeof(Hyperfine*));
+    for (i=0; i<s->nHF; i++) wsp->HF[i] = s->HF[i];
 
     wsp->dw = 1.0e6/s->sw;
 
@@ -1136,13 +1204,17 @@ Sim_wsp * wsp_initialize(Sim_info *s)
     wsp->FWTASG_icol = NULL;
 
     // labframe
-    if (s->labframe == 1) {
+    if (s->frame == LABFRAME) {
     	wsp->Hlab = complx_matrix(s->matdim,s->matdim,MAT_DENSE,0,s->basis);
     	wsp->Hrflab = complx_matrix(s->matdim,s->matdim,MAT_DENSE,0,s->basis);
     } else {
     	wsp->Hlab = NULL;
     	wsp->Hrflab = NULL;
     }
+
+    // complex Hamiltonian
+    wsp->Hcplx = NULL;
+    wsp->Hrf_blk = NULL;
 
 	DEBUGPRINT("wsp_initialize end\n");
 
@@ -1153,6 +1225,8 @@ Sim_wsp * wsp_initialize(Sim_info *s)
 void wsp_destroy(Sim_info *s, Sim_wsp *wsp)
 {
 	int i, j;
+
+	DEBUGPRINT("wsp_destroy start\n");
 
     if (wsp->fdetect != s->fdetect) free_complx_matrix(wsp->fdetect);
     if (wsp->fstart != s->fstart) free_complx_matrix(wsp->fstart);
@@ -1187,6 +1261,20 @@ void wsp_destroy(Sim_info *s, Sim_wsp *wsp)
 	free((char*)(wsp->J_Rlab));
 	free((char*)(wsp->J_Rrot));
 	free((char*)(wsp->J_used));
+	for (i=0; i<s->nG; i++) {
+		free_complx_vector(wsp->G_Rlab[i]);
+		free_complx_vector(wsp->G_Rrot[i]);
+	}
+	free((char*)(wsp->G_Rlab));
+	free((char*)(wsp->G_Rrot));
+	free((char*)(wsp->G_used));
+	for (i=0; i<s->nHF; i++) {
+		free_complx_vector(wsp->HF_Rlab[i]);
+		free_complx_vector(wsp->HF_Rrot[i]);
+	}
+	free((char*)(wsp->HF_Rlab));
+	free((char*)(wsp->HF_Rrot));
+	free((char*)(wsp->HF_used));
 
     if (wsp->inhom_offset) free_double_vector(wsp->inhom_offset);
     if (wsp->offset) free_double_vector(wsp->offset);
@@ -1311,6 +1399,25 @@ void wsp_destroy(Sim_info *s, Sim_wsp *wsp)
     	}
     }
     free((char *)(wsp->Q)); wsp->Q = NULL;
+    for (i=0; i<s->nG; i++) {
+    	if (wsp->G[i] != s->G[i]) {
+    		free_complx_vector(wsp->G[i]->Rmol);
+    		if (wsp->G[i]->T != s->G[i]->T) free_double_matrix(wsp->G[i]->T);
+    		free((char *)(wsp->G[i]));
+    	}
+    }
+    free((char *)(wsp->G)); wsp->G = NULL;
+    for (i=0; i<s->nHF; i++) {
+    	if (wsp->HF[i] != s->HF[i]) {
+    		free_complx_vector(wsp->HF[i]->Rmol);
+    		if (wsp->HF[i]->blk_Tiso != s->HF[i]->blk_Tiso) free_blk_mat_double(wsp->HF[i]->blk_Tiso);
+    		if (wsp->HF[i]->blk_T != s->HF[i]->blk_T) free_blk_mat_double(wsp->HF[i]->blk_T);
+    		if (wsp->HF[i]->blk_Ta != s->HF[i]->blk_Ta) free_blk_mat_double(wsp->HF[i]->blk_Ta);
+    		if (wsp->HF[i]->blk_Tb != s->HF[i]->blk_Tb) free_blk_mat_double(wsp->HF[i]->blk_Tb);
+    		free((char *)(wsp->HF[i]));
+    	}
+    }
+    free((char *)(wsp->HF)); wsp->HF = NULL;
 
     if (wsp->FWTASG_irow != NULL) {
     	free(wsp->FWTASG_irow);
@@ -1330,6 +1437,18 @@ void wsp_destroy(Sim_info *s, Sim_wsp *wsp)
     	free_complx_matrix(wsp->Hrflab);
     	wsp->Hrflab = NULL;
     }
+
+    // complex Hamiltonian
+    if (wsp->Hcplx != NULL) {
+    	free_blk_mat_complx(wsp->Hcplx);
+    	wsp->Hcplx = NULL;
+    }
+    if (wsp->Hrf_blk != NULL) {
+    	free_blk_mat_complx(wsp->Hrf_blk);
+    	wsp->Hrf_blk = NULL;
+    }
+
+	DEBUGPRINT("wsp_destroy end\n");
 
 }
 

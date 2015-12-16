@@ -139,3 +139,7 @@ proc 3dplot {file xlabel ylabel {zrange {}}} {
   exec gnuplot $file.gnu
   puts "Generated: ${file}-3d.ps"
 }
+
+proc simview {args} {
+  puts "Saved files: $args"
+}

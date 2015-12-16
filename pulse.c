@@ -600,7 +600,7 @@ void _acq(Sim_info *sim, Sim_wsp *wsp, double phase)
 	  ptr->re += z.re;
 	  ptr->im += z.im;
   }
-  //DEBUGPRINT("_acq: fid(%d) = (%f, %f) ; z = (%f, %f)\n",wsp->curr_nsig,ptr->re,ptr->im,z.re,z.im);
+  //printf("_acq: fid(%d) = (%f, %f) ; z = (%f, %f)\n",wsp->curr_nsig,ptr->re,ptr->im,z.re,z.im);
 }
 
 void _nacq(Sim_info *sim, Sim_wsp *wsp, int np,int num,double phase)
@@ -686,8 +686,10 @@ void _delay_simple(Sim_info *sim, Sim_wsp *wsp, double duration)
 	if (sim->wr < TINY) {
 		/* static case */
 		ham_hamilton(sim,wsp);
-		if (sim->labframe == 1) {
+		if (sim->frame == LABFRAME) {
 			blk_prop_complx(wsp->dU,wsp->Hlab,duration*1e-6,sim);
+		} else if (wsp->Hcplx != NULL) {
+			blk_prop_complx_3(wsp->dU,wsp->Hcplx,duration*1e-6,sim);
 		} else {
 			blk_prop_real(wsp->dU,wsp->ham_blk,duration*1e-6,sim);
 		}
@@ -697,7 +699,7 @@ void _delay_simple(Sim_info *sim, Sim_wsp *wsp, double duration)
 		if (sim->Hint_isdiag) {
 			DEBUGPRINT("_delay_simple integration of diagonal Hamiltonian\n");
 			/* delay in pulse sequence */
-			assert(sim->labframe != 1);
+			assert(sim->frame == ROTFRAME);
 			ham_hamilton_integrate(sim,wsp,duration);
 			blk_prop_real(wsp->dU,wsp->ham_blk,1.0, sim); // unit duration since time was integrated
 			wsp->t += duration;
@@ -713,8 +715,10 @@ void _delay_simple(Sim_info *sim, Sim_wsp *wsp, double duration)
 				//printf("STEP %i, time %f, ",i,wsp->t);
 				//blk_dm_print(wsp->ham_blk," Ham");
 				//if (i==1) {
-				if (sim->labframe == 1) {
+				if (sim->frame == LABFRAME) {
 					blk_prop_complx(wsp->dU,wsp->Hlab,dt,sim);
+				} else if (wsp->Hcplx != NULL) {
+					blk_prop_complx_3(wsp->dU,wsp->Hcplx,duration*1e-6,sim);
 				} else {
 					blk_prop_real(wsp->dU, wsp->ham_blk, dt, sim);
 				}
@@ -819,10 +823,14 @@ int _setrfprop(Sim_info *sim, Sim_wsp *wsp)
   wsp->spinused = NULL;
 
   //blk_dm_print(wsp->sumHrf,"_setrfprop sumHrf");
-  if (sim->labframe == 1) {
+  if (sim->frame == LABFRAME) {
 	  assert(wsp->sumHrf->Nblocks == 1);
 	  dm_copy2cm(wsp->sumHrf->m, wsp->Hrflab);
 	  simtrans_zrot2(wsp->Hrflab, wsp->sumUph);
+  }
+  if (sim->frame == DNPFRAME) {
+	  if (wsp->Hrf_blk != NULL) free_blk_mat_complx(wsp->Hrf_blk);
+	  wsp->Hrf_blk = ham_rf(wsp);
   }
 
   return isany;
@@ -842,16 +850,25 @@ void _pulse_simple(Sim_info *sim, Sim_wsp *wsp, double duration)
 	if (n < 1) n = 1;
 	dt_us = duration/(double)n;
 	dt = dt_us*1.0e-6;
-	DEBUGPRINT("_pulse_simple duration of %f us split into %d steps of %f us\n",duration,n,dt*1.0e+6);
+	//printf("_pulse_simple duration of %f us split into %d steps of %f us\n",duration,n,dt*1.0e+6);
 	for (i=1;i<=n;i++) {
 		//blk_dm_print(wsp->Hiso,"_pulse Hiso PRED");
 		ham_hamilton(sim,wsp);
 		//blk_dm_print(wsp->ham_blk,"_pulse HAM_int");
 		//blk_dm_print(wsp->sumHrf,"_pulse HAM_rf");
-		if (sim->labframe == 1) {
+		if (sim->frame == LABFRAME) {
 			cm_multod(wsp->Hlab,wsp->Hrflab,1.0);
 			blk_prop_complx(wsp->dU,wsp->Hlab,dt,sim);
+		} else if (sim->frame == DNPFRAME) {
+			//blk_cm_print(wsp->Hcplx,"Hamilton interactions");
+			blk_cm_multod(wsp->Hcplx,wsp->Hrf_blk,1.0);
+			//blk_cm_print(wsp->Hrf_blk,"Hamilton pulse");
+			//blk_cm_print(wsp->Hcplx,"Ham total");
+			//blk_cm_print(wsp->dU,"dU clean propagator");
+			blk_prop_complx_3(wsp->dU,wsp->Hcplx,dt,sim);
+			//blk_cm_print(wsp->dU,"propagator");
 		} else {
+			//blk_dm_print(wsp->ham_blk,"_pulse HAM ints");
 			blk_dm_multod(wsp->ham_blk,wsp->sumHrf,1.0);
 		//blk_dm_print(wsp->ham_blk,"_pulse HAM_TOT");
 		//printf("thread %d, cryst %d: i %d: Ham(1,1) = %10.5f\n",wsp->thread_id,wsp->cryst_idx,i,blk_dm_getelem(wsp->ham_blk,1,1));
@@ -869,7 +886,7 @@ void _pulse_simple(Sim_info *sim, Sim_wsp *wsp, double duration)
 	}
 	//exit(1);
 	//blk_cm_print(wsp->dU,"_pulse pre-phase propagator");
-	if (sim->labframe == 0) {
+	if (sim->frame == ROTFRAME) {
 		blk_simtrans_zrot2(wsp->dU,wsp->sumUph);
 	}
 	//dm_print(wsp->sumUph,"_pulse sumUph");

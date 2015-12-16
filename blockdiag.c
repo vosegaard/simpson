@@ -2284,7 +2284,8 @@ mat_complx * blk_cm_mul_v2(mat_complx *cm, blk_mat_complx *blkm)
 					for (j=0; j<blkm->Nblocks; j++) {
 						NNr = blkm->blk_dims[j];
 						// kdyz NNr==1 tak to je radka*blk_matice=radka, stejne jako matice*blk_matice=matice
-						cblas_zgemm(CblasColMajor,CblasNoTrans,CblasNoTrans,NNr,NN,NNr,&Cunit,cm->data+pr+pc*dim,dim,bm->data,NN,&Cnull,res->data+pr+pc*dim,dim);
+						//cblas_zgemm(CblasColMajor,CblasNoTrans,CblasNoTrans,NNr,NN,NNr,&Cunit,cm->data+pr+pc*dim,dim,bm->data,NN,&Cnull,res->data+pr+pc*dim,dim);
+						cblas_zgemm(CblasColMajor,CblasNoTrans,CblasNoTrans,NNr,NN,NN,&Cunit,cm->data+pr+pc*dim,dim,bm->data,NN,&Cnull,res->data+pr+pc*dim,dim);
 						pr += NNr;
 					}
 					break;
@@ -2397,7 +2398,6 @@ void update_propagator(blk_mat_complx *U, blk_mat_complx *dU, Sim_info *sim, Sim
 
 	int i;
 	mat_complx *mU, *mdU;
-
 
 	if (wsp == NULL) {
 		// this is used only within _pulse_simple  and _delay_simple with no base change
@@ -2730,7 +2730,7 @@ void blk_prop_real(blk_mat_complx *U, blk_mat_double *ham, double duration, Sim_
 
 void blk_prop_complx(blk_mat_complx *U, mat_complx *ham, double dur, Sim_info *sim)
 {
-	assert(sim->labframe == 1);
+	assert(sim->frame == LABFRAME);
 	assert(U->Nblocks == 1);
 	mat_complx *dum = complx_matrix(ham->row,ham->col,MAT_DENSE_DIAG, 0, ham->basis);
 
@@ -2776,6 +2776,37 @@ void blk_prop_complx_2(blk_mat_complx *U, mat_complx *mtx, double dur, int propm
 	U->basis = mtx->basis;
 	assert(U->dim == mtx->row);
 	prop_complx(U->m,mtx,dur,propmethod);
+
+}
+
+void blk_prop_complx_3(blk_mat_complx *U, blk_mat_complx *ham, double dur, Sim_info *sim)
+{
+	int i, N;
+	mat_complx *dU, *dH;
+	assert(U->dim == ham->dim);
+	assert(U->basis == ham->basis); // assume U already has proper block-structure (done in change_basis)
+	assert(U->Nblocks == ham->Nblocks);
+
+	for (i=0; i<ham->Nblocks; i++) {
+		N = ham->blk_dims[i];
+		assert(U->blk_dims[i] == N);
+		dU = U->m + i;
+		dH = ham->m + i;
+		if (N==1) {
+			double r = exp(dH->data[0].im*dur);
+			double c = r*cos(dH->data[0].re*dur);
+			double s = -r*sin(dH->data[0].re*dur);
+			r = dU->data[0].re;
+			dU->data[0].re = r*c - dU->data[0].im*s;
+			dU->data[0].im = r*s + dU->data[0].im*c;
+		} else {
+			mat_complx *dum = complx_matrix(N,N,MAT_DENSE_DIAG, 0, ham->basis);
+			prop_complx(dum,dH,dur,sim->propmethod);
+			cm_multo_rev(U->m,dum);
+			free_complx_matrix(dum);
+			//printf(" blk_prop_complx_3: END dU is %s with %d nnz\n",matrix_type(dU->type),cm_nnz(dU));
+		}
+	}
 
 }
 
@@ -4766,3 +4797,43 @@ blk_mat_complx * blk_cm_ln(blk_mat_complx *blkm)
 	return res;
 }
 
+/* to a complex matrix, add z*real_matrix */
+void blk_cm_multocr(blk_mat_complx *blk_cm, blk_mat_double *blk_dm, complx z) {
+	int i, N;
+	mat_complx *cm;
+	mat_double *dm;
+	assert(blk_cm->dim == blk_dm->dim);
+	assert(blk_cm->Nblocks == blk_dm->Nblocks);
+
+	for (i=0; i<blk_cm->Nblocks; i++) {
+		N = blk_cm->blk_dims[i];
+		cm = blk_cm->m + i;
+		dm = blk_dm->m + i;
+		if (N==1) {
+			cm->data[0].re += dm->data[0]*z.re;
+			cm->data[0].im += dm->data[0]*z.im;
+		} else {
+			cm_multocr(cm,dm,z);
+		}
+	}
+}
+
+/* to a complex matrix, add z*real_matrix */
+void blk_cm_multod(blk_mat_complx *blk_cm1, blk_mat_complx *blk_cm2, double d) {
+	int i, N;
+	mat_complx *cm1, *cm2;
+	assert(blk_cm1->dim == blk_cm2->dim);
+	assert(blk_cm1->Nblocks == blk_cm2->Nblocks);
+
+	for (i=0; i<blk_cm1->Nblocks; i++) {
+		N = blk_cm1->blk_dims[i];
+		cm1 = blk_cm1->m + i;
+		cm2 = blk_cm2->m + i;
+		if (N==1) {
+			cm1->data[0].re += cm2->data[0].re*d;
+			cm1->data[0].im += cm2->data[0].im*d;
+		} else {
+			cm_multod(cm1,cm2,d);
+		}
+	}
+}

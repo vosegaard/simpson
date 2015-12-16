@@ -69,6 +69,9 @@ extern "C" {
 //#define SPARSITY      0.8
 //#define MAXFULLDIM    10
 //#define MAXDIMDIAGONALIZE    4096
+#define ROTFRAME  10
+#define LABFRAME  11
+#define DNPFRAME  12
 
 extern int verbose;
 extern int various;

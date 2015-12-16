@@ -979,7 +979,7 @@ void direct_acqblock_freq(Tcl_Interp *interp,Tcl_Obj *obj,Sim_info *sim,Sim_wsp 
 	double binsize = sim->sw*2*M_PI/sim->np;
 	int direction = sim->conjugate_fid ? -1 : +1;
 	int binshift = 0;
-	if (sim->labframe == 1) {
+	if (sim->frame == LABFRAME) {
 		double dum = ss_gamma(sim->ss,sim->obs_nuc)*sim->specfreq/ss_gamma1H()*2*M_PI;
 		//printf("obsnuc: %d, g:%g, gh:%g, frq: %g",sim->obs_nuc,ss_gamma(sim->ss,sim->obs_nuc),ss_gamma1H(),dum/2/M_PI);
 		dum = dum - floor(dum/freqT)*freqT;

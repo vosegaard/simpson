@@ -114,6 +114,35 @@ int quadrupole_exist(Sim_info* s,int n)
 	return res;
 }
 
+int gtensor_exist(Sim_info* s,int n)
+{
+	int i, res=-1;
+	for (i=0;i<s->nG;i++) {
+		if (s->G[i]->nuc == n) {
+			res = i;
+			break;
+		}
+	}
+	return res;
+}
+
+int hyperfine_exist(Sim_info* s,int n1, int n2)
+{
+	int i, res=-1;
+	for (i=0; i<s->nDD; i++) {
+		if ( (s->DD[i]->nuc[0] == n1) && (s->DD[i]->nuc[1] == n2) ) {
+			res = i;
+			break;
+		}
+		if ( (s->DD[i]->nuc[0] == n2) && (s->DD[i]->nuc[1] == n1) ) {
+			res = i;
+			break;
+		}
+	}
+	return res;
+}
+
+
 /* this can be just wsp variable, set by turnon/turnoff commands */
 int ham_ischanged(Sim_info *s, Sim_wsp *wsp)
 {
@@ -134,6 +163,12 @@ int ham_ischanged(Sim_info *s, Sim_wsp *wsp)
   }
   for (i=0;i<s->nJ;i++) {
     if (!wsp->J_used[i]) return 1;
+  }
+  for (i=0;i<s->nG;i++) {
+    if (!wsp->G_used[i]) return 1;
+  }
+  for (i=0;i<s->nHF;i++) {
+    if (!wsp->HF_used[i]) return 1;
   }
   return 0;
 }
@@ -168,13 +203,15 @@ void ham_turnoff(Sim_info *s, Sim_wsp *wsp,char* name)
 	  memset(wsp->DD_used,0,sizeof(int)*s->nDD);
 	  memset(wsp->Q_used,0,sizeof(int)*s->nQ);
 	  memset(wsp->J_used,0,sizeof(int)*s->nJ);
+	  memset(wsp->G_used,0,sizeof(int)*s->nG);
+	  memset(wsp->HF_used,0,sizeof(int)*s->nHF);
 	  blk_dm_copy(wsp->Hiso_off,wsp->Hiso);
 	  if (s->Hassembly) {
 		  for (i=0; i<5; i++) {
 			  blk_dm_copy(wsp->HQ_off[i],wsp->HQ[i]);
 		  }
 	  }
-	  wsp->Nint_off = s->nCS + s->nDD + s->nQ + s->nJ;
+	  wsp->Nint_off = s->nCS + s->nDD + s->nQ + s->nJ + s->nG + s->nHF;
      return;
   }
 
@@ -325,6 +362,77 @@ void ham_turnoff(Sim_info *s, Sim_wsp *wsp,char* name)
 	  fprintf(stderr,"Error: turnoff - unknown name '%s'\n",name);
 	  exit(1);
   }
+  if (sscanf(name,"gtensor_%d",&n1) == 1) {
+	  Gtensor *gptr;
+	  for (i=0; i<s->nG;i++) {
+		  if (wsp->G[i]->nuc == n1) {
+			  if (wsp->G_used[i]) {
+				  gptr = wsp->G[i];
+				  if (gptr->T == NULL) {
+					  /* MUTEX LOCK */
+					  gptr->T = Iz_ham(s,n1);
+					  /* MUTEX UNLOCK */
+				  }
+				  wsp->Nint_off++;
+				  mx = dm_change_basis_2(gptr->T,wsp->Hiso->basis,s);
+				  if (fabs(gptr->iso)>TINY) blk_dm_multod_diag(wsp->Hiso_off,mx,gptr->iso);
+				  if (s->Hassembly && (fabs(gptr->delta)>TINY)) {
+					  blk_dm_multod_diag(wsp->HQ_off[0],mx,gptr->Rmol[3].re);
+					  blk_dm_multod_diag(wsp->HQ_off[1],mx,gptr->Rmol[4].re);
+					  blk_dm_multod_diag(wsp->HQ_off[2],mx,gptr->Rmol[4].im);
+					  blk_dm_multod_diag(wsp->HQ_off[3],mx,gptr->Rmol[5].re);
+					  blk_dm_multod_diag(wsp->HQ_off[4],mx,gptr->Rmol[5].im);
+				  }
+				  free_double_matrix(mx);
+			  }
+			  wsp->G_used[i] = 0;
+			  return;
+		  }
+	  }
+	  fprintf(stderr,"Error: turnoff - unknown name '%s'\n",name);
+	  exit(1);
+  }
+  if (sscanf(name,"hyperfine_%d_%d",&n1, &n2) == 2) {
+	  i = hyperfine_exist(s,n1,n2); // returns index, if not found then i=-1
+	  if ( i >= 0 ) {
+		  if (wsp->HF_used[i]) {
+			  wsp->Nint_off++;
+			  Hyperfine *hfptr = wsp->HF[i];
+			  if (fabs(hfptr->iso) > TINY) {
+				  /* MUTEX LOCK */
+				  if (hfptr->blk_Tiso == NULL) {
+					  hfptr->blk_Tiso = IzIz_sqrt2by3(s,n1,n2);
+					  blk_dm_muld(hfptr->blk_Tiso,1.0/SQRT2BY3);
+				  }
+				  /* MUTEX UNLOCK */
+				  blk_mx = create_blk_mat_double_copy(wsp->Hiso_off);
+				  blk_dm_change_basis(blk_mx, hfptr->blk_Tiso, s);
+				  blk_dm_multod(wsp->Hiso_off,blk_mx,hfptr->iso);
+				  free_blk_mat_double(blk_mx);
+			  }
+			  if ( (fabs(hfptr->delta) > TINY) && s->Hassembly) {
+				  /* MUTEX LOCK */
+				  if (hfptr->blk_T == NULL) {
+					  hfptr->blk_T = IzIz_sqrt2by3(s,n1,n2);
+				  }
+				  /* MUTEX UNLOCK */
+				  blk_mx = create_blk_mat_double_copy(wsp->HQ_off[0]);
+				  blk_dm_change_basis(blk_mx, hfptr->blk_T, s);
+				  blk_dm_multod(wsp->HQ_off[0],blk_mx,hfptr->Rmol[3].re);
+				  blk_dm_multod(wsp->HQ_off[1],blk_mx,hfptr->Rmol[4].re);
+				  blk_dm_multod(wsp->HQ_off[2],blk_mx,hfptr->Rmol[4].im);
+				  blk_dm_multod(wsp->HQ_off[3],blk_mx,hfptr->Rmol[5].re);
+				  blk_dm_multod(wsp->HQ_off[4],blk_mx,hfptr->Rmol[5].im);
+				  free_blk_mat_double(blk_mx);
+			  }
+		  }
+		  wsp->HF_used[i] = 0;
+		  return;
+	  }
+	  fprintf(stderr,"Error: turnoff - unknown name '%s'\n",name);
+	  exit(1);
+  }
+
   fprintf(stderr,"error: turnoff: unknown interaction name '%s'\n",name);
   exit(1);
 }
@@ -359,6 +467,8 @@ void ham_turnon(Sim_info *s, Sim_wsp *wsp,char* name)
 	  for (i=0; i<s->nDD; i++) wsp->DD_used[i] = 1;
 	  for (i=0; i<s->nQ; i++) wsp->Q_used[i] = 1;
 	  for (i=0; i<s->nJ; i++) wsp->J_used[i] = 1;
+	  for (i=0; i<s->nG; i++) wsp->G_used[i] = 1;
+	  for (i=0; i<s->nHF; i++) wsp->HF_used[i] = 1;
 	  clear_int_off(s,wsp);
      return;
   }
@@ -515,6 +625,84 @@ void ham_turnon(Sim_info *s, Sim_wsp *wsp,char* name)
 	  fprintf(stderr,"Error: turnon - unknown name '%s'\n",name);
 	  exit(1);
   }
+  if (sscanf(name,"gtensor_%d",&n1) == 1) {
+	  i = gtensor_exist(s,n1);
+	  if (i >= 0) {
+		  if (!(wsp->CS_used[i])) {
+			  Gtensor *gptr;
+			  gptr = wsp->G[i];
+			  assert(gptr->T);
+			  if (--(wsp->Nint_off) > 0) {
+				  //  odecist
+				  mx = dm_change_basis_2(gptr->T,wsp->Hiso_off->basis,s);
+				  if (fabs(gptr->iso)>TINY) {
+					  assert(wsp->Hiso_off);
+					  blk_dm_multod_diag(wsp->Hiso_off,mx,-gptr->iso);
+				  }
+				  if (s->Hassembly && fabs(gptr->delta)>TINY) {
+					  for (j=0; j<5; j++) {
+						  assert(wsp->HQ_off[j]);
+					  }
+					  blk_dm_multod_diag(wsp->HQ_off[0],mx,-gptr->Rmol[3].re);
+					  blk_dm_multod_diag(wsp->HQ_off[1],mx,-gptr->Rmol[4].re);
+					  blk_dm_multod_diag(wsp->HQ_off[2],mx,-gptr->Rmol[4].im);
+					  blk_dm_multod_diag(wsp->HQ_off[3],mx,-gptr->Rmol[5].re);
+					  blk_dm_multod_diag(wsp->HQ_off[4],mx,-gptr->Rmol[5].im);
+				  }
+				  free_double_matrix(mx);
+			  } else {
+				  //  zrusit
+				  clear_int_off(s,wsp);
+			  }
+		  }
+		  wsp->G_used[i] = 1;
+		  return;
+	  }
+	  fprintf(stderr,"Error: turnon - unknown name '%s'\n",name);
+	  exit(1);
+  }
+  if (sscanf(name,"hyperfine_%d_%d",&n1, &n2) == 2) {
+	  i = hyperfine_exist(s,n1,n2);
+	  if ( i >= 0 ) {
+		  Hyperfine *hfptr;
+		  if (!(wsp->HF_used[i])) {
+			  hfptr = wsp->HF[i];
+			  if (--(wsp->Nint_off) > 0) {
+				  //  odecist
+				  if (fabs(hfptr->iso)>TINY) {
+					  assert(hfptr->blk_Tiso && wsp->Hiso_off);
+					  blk_mx = create_blk_mat_double_copy(wsp->Hiso_off);
+					  blk_dm_change_basis(blk_mx, hfptr->blk_Tiso,s);
+					  blk_dm_multod(wsp->Hiso_off,blk_mx,-hfptr->iso);
+					  free_blk_mat_double(blk_mx);
+				  }
+				  if (s->Hassembly && fabs(hfptr->delta)>TINY) {
+					  assert(hfptr->blk_T);
+					  for (j=0; j<5; j++) {
+						  assert(wsp->HQ_off[j]);
+					  }
+					  blk_mx = create_blk_mat_double_copy(wsp->HQ_off[0]);
+					  blk_dm_change_basis(blk_mx, hfptr->blk_T,s);
+					  blk_dm_multod(wsp->HQ_off[0],blk_mx,-hfptr->Rmol[3].re);
+					  blk_dm_multod(wsp->HQ_off[1],blk_mx,-hfptr->Rmol[4].re);
+					  blk_dm_multod(wsp->HQ_off[2],blk_mx,-hfptr->Rmol[4].im);
+					  blk_dm_multod(wsp->HQ_off[3],blk_mx,-hfptr->Rmol[5].re);
+					  blk_dm_multod(wsp->HQ_off[4],blk_mx,-hfptr->Rmol[5].im);
+					  free_blk_mat_double(blk_mx);
+				  }
+			  } else {
+				  //  zrusit
+				  clear_int_off(s,wsp);
+			  }
+		  }
+		  wsp->HF_used[i] = 1;
+		  return;
+	  }
+	  fprintf(stderr,"Error: turnon - unknown name '%s'\n",name);
+	  exit(1);
+  }
+
+
   fprintf(stderr,"error: turnon: unknown interaction name '%s'\n",name);
   exit(1);
 }
@@ -542,6 +730,10 @@ void ham_rotate(Sim_info *s, Sim_wsp *wsp)
 			  wig2rot(wsp->DD_Rrot[s->MIX[i]->idx],wsp->DD[s->MIX[i]->idx]->Rmol,d2);
 		  }
 	  }
+	  // I do this because I need Rrot for terms T2+-1 that are not included in HQ[]
+	  for (i=0; i<s->nHF; i++) {
+		  if (wsp->HF_Rrot[i] != NULL) wig2rot(wsp->HF_Rrot[i],wsp->HF[i]->Rmol,d2);
+	  }
   } else {
 	  for (i=0; i<s->nCS; i++) {
 		  //DEBUGPRINT("   i = %d, w_iso = %f\n",i,s->CS[i]->iso);
@@ -556,6 +748,14 @@ void ham_rotate(Sim_info *s, Sim_wsp *wsp)
 		  if (wsp->J_Rrot[i] != NULL) wig2rot(wsp->J_Rrot[i],wsp->J[i]->Rmol,d2);
 	  }
 	  //DEBUGPRINT("ham_rotate point 6\n");
+	  for (i=0; i<s->nG; i++) {
+		  if (wsp->G_Rrot[i] != NULL) wig2rot(wsp->G_Rrot[i],wsp->G[i]->Rmol,d2);
+	  }
+	  //DEBUGPRINT("ham_rotate point 7\n");
+	  for (i=0; i<s->nHF; i++) {
+		  if (wsp->HF_Rrot[i] != NULL) wig2rot(wsp->HF_Rrot[i],wsp->HF[i]->Rmol,d2);
+	  }
+	  //DEBUGPRINT("ham_rotate point 8\n");
 	  free_complx_matrix(d2);
   }
 }
@@ -619,6 +819,14 @@ void ham_hamilton_labframe(Sim_info *s, Sim_wsp *wsp)
 			sgn *= -1;
 		}
 	}
+	for (i=0; i<s->nG; i++) {
+		fprintf(stderr,"Error: Gtensor not implemented in labframe");
+		exit(1);
+	}
+	for (i=0; i<s->nHF; i++) {
+		fprintf(stderr,"Error: Hyperfine not implemented in labframe");
+		exit(1);
+	}
 }
 
 /* this makes final rotation ROT->LAB and creates interaction Hamiltonian */
@@ -629,7 +837,7 @@ void ham_hamilton(Sim_info *s, Sim_wsp *wsp)
 		blk_dm_muld(wsp->ham_blk,1.0e6/wsp->dtmax);
 		return;
 	}
-	if (s->labframe == 1) {
+	if (s->frame == LABFRAME) {
 		ham_hamilton_labframe(s,wsp);
 		return;
 	}
@@ -653,7 +861,7 @@ void ham_hamilton(Sim_info *s, Sim_wsp *wsp)
 	  free_complx_matrix(md2);
   } else {
 	  d20 = wigner20(s->wr*wsp->t*1.0e-6*RAD2DEG+wsp->gamma_add,wsp->brl);
-	  if (s->nQ) d2 = wigner2(s->wr*wsp->t*1.0e-6*RAD2DEG+wsp->gamma_add,wsp->brl,0.0);
+	  if ( (s->nQ != 0) || (s->nHF != 0) ) d2 = wigner2(s->wr*wsp->t*1.0e-6*RAD2DEG+wsp->gamma_add,wsp->brl,0.0);
   }
   
   blk_dm_multod(wsp->ham_blk,wsp->Hiso,1.0);
@@ -677,6 +885,7 @@ void ham_hamilton(Sim_info *s, Sim_wsp *wsp)
 		  blk_dm_multod(wsp->ham_blk,wsp->HQ_off[3],-2.0*res[5].re);
 		  blk_dm_multod(wsp->ham_blk,wsp->HQ_off[4],2.0*res[5].im);
 	  }
+	  // but we miss T2+-1 terms of Hyperfine interaction
   } else {
 	  for (i=0; i<s->nCS; i++) {
 		  if (!wsp->CS_used[i] || wsp->CS_Rrot[i] == NULL) continue;
@@ -698,6 +907,12 @@ void ham_hamilton(Sim_info *s, Sim_wsp *wsp)
 		  //DEBUGPRINT("(matdim=%d,",s->J[i]->T->row);
 		  //DEBUGPRINT("Janiso=%f)\n",dw);
 		  if (fabs(dw) > TINY) blk_dm_multod(wsp->ham_blk,wsp->J[i]->blk_T,dw);
+	  }
+	  for (i=0; i<s->nG; i++) {
+		  if (!wsp->G_used[i] || wsp->G_Rrot[i] == NULL) continue;
+		  dw = wig20rot(wsp->G_Rrot[i],d20);
+		  //DEBUGPRINT("ham_hamilton: adding ANISO gtensor %d (dw=%f)\n",i,dw);
+		  if (fabs(dw) > TINY) blk_dm_multod_diag(wsp->ham_blk,wsp->G[i]->T,dw);
 	  }
   }
 
@@ -771,6 +986,32 @@ void ham_hamilton(Sim_info *s, Sim_wsp *wsp)
 		  }
 	  }
   }
+  /* Hyperfine terms are special as well */
+  for (i=0; i<s->nHF; i++) {
+	  if (!wsp->HF_used[i] || wsp->HF_Rrot[i] == NULL) continue;
+	  assert(s->frame == DNPFRAME);
+	  if (wsp->Hcplx == NULL) {
+		  wsp->Hcplx = create_blk_mat_complx_copy2(wsp->ham_blk);
+		  blk_cm_zero(wsp->Hcplx);
+	  }
+	  if (!s->Hassembly) { // T20 term
+		  dw = wig20rot(wsp->HF_Rrot[i],d20);
+		  //DEBUGPRINT("ham_hamilton: adding ANISO hyperfine %d (dw=%f)\n",i,dw);
+		  if (fabs(dw) > TINY) blk_dm_multod(wsp->ham_blk,wsp->HF[i]->blk_T,dw);
+	  } // else only T2+-1 terms are missing
+	  complx *zptr1 = wsp->HF_Rrot[i];
+	  complx *zptr2 = &(d2->data[5]); // here is located D-2-1
+	  //cv_print(zptr1,"Rrot");
+	  cblas_zdotu_sub(LEN(d20),zptr1+1,1,zptr2,1,&cdw);
+	  //printf("hyperfine -1: (%g, %g)\n",cdw.re, cdw.im);
+	  //assert( fabs(cdw.im) < TINY);
+	  blk_cm_multocr(wsp->Hcplx,wsp->HF[i]->blk_Tb,cdw);
+	  zptr2 = &(d2->data[15]); // here is D-2+1
+	  cblas_zdotu_sub(LEN(d20),zptr1+1,1,zptr2,1,&cdw);
+	  //printf("hyperfine +1: (%g, %g)\n",cdw.re, cdw.im);
+	  //assert( fabs(cdw.im) < TINY);
+	  blk_cm_multocr(wsp->Hcplx,wsp->HF[i]->blk_Ta,cdw);
+  }
 
   /* offset terms */
   if (wsp->offset != NULL || wsp->inhom_offset != NULL) {
@@ -780,7 +1021,7 @@ void ham_hamilton(Sim_info *s, Sim_wsp *wsp)
 	  if (wsp->offset != NULL) dv_multod(ovals,wsp->offset,1.0);
 	  if (wsp->inhom_offset != NULL) dv_multod(ovals,wsp->inhom_offset,1.0);
 	  for (i=1; i<=nch; i++) {
-		  DEBUGPRINT("ham_hamilton: adding offsets to channel %d\n",i);
+		  //printf("ham_hamilton: adding offsets %g to channel %d\n",ovals[i],i);
 		  blk_dm_multod_diag(wsp->ham_blk,wsp->chan_Iz[i],ovals[i]);
 	  }
 	  free_double_vector(ovals);
@@ -789,6 +1030,11 @@ void ham_hamilton(Sim_info *s, Sim_wsp *wsp)
 
   free_complx_vector(d20);
   if (d2 != NULL) free_complx_matrix(d2);
+
+  if (s->frame == DNPFRAME) {
+	  assert(wsp->Hcplx != NULL);
+	  blk_cm_multocr(wsp->Hcplx,wsp->ham_blk,Cunit);
+  }
 
 	//QueryPerformanceCounter(&tv2);
 	//printf("\t\tham_hamilton time: %.9f\n",((float)(tv2.QuadPart-tv1.QuadPart))/(float)tickpsec.QuadPart);
@@ -1060,6 +1306,7 @@ void ham_hamilton_integrate(Sim_info *s, Sim_wsp *wsp, double dur)
 			  blk_dm_multod(wsp->ham_blk,wsp->HQ_off[3],-2.0*R[5].re);
 			  blk_dm_multod(wsp->ham_blk,wsp->HQ_off[4],2.0*R[5].im);
 		  }
+		  // but we miss Hyperfine terms T2+-1
 	} else {
 		for (i=0; i<s->nCS; i++) {
 			if (!wsp->CS_used[i] || wsp->CS_Rrot[i] == NULL) continue;
@@ -1087,6 +1334,15 @@ void ham_hamilton_integrate(Sim_info *s, Sim_wsp *wsp, double dur)
 			}
 			assert(fabs(cdw.im) < TINY);
 			if (fabs(cdw.re) > TINY) blk_dm_multod(wsp->ham_blk,wsp->J[i]->blk_T,cdw.re);
+		}
+		for (i=0; i<s->nG; i++) {
+			if (!wsp->G_used[i] || wsp->G_Rrot[i] == NULL) continue;
+			cdw = Cnull;
+			for (j=1; j<6; j++) {
+				cdw = Cadd(cdw,Cmul(Cmul(wsp->G_Rrot[i][j],d20[j]),R[j]));
+			}
+			assert(fabs(cdw.im) < TINY);
+			if (fabs(cdw.re) > TINY) blk_dm_multod_diag(wsp->ham_blk,wsp->G[i]->T,cdw.re);
 		}
 	}
 
@@ -1221,6 +1477,34 @@ void ham_hamilton_integrate(Sim_info *s, Sim_wsp *wsp, double dur)
 			}
 		}
 	}
+	// Hyperfine is special
+	for (i=0; i<s->nHF; i++) {
+		if (!wsp->HF_used[i] || wsp->HF_Rrot[i] == NULL) continue;
+		if (wsp->Hcplx == NULL) {
+			wsp->Hcplx = create_blk_mat_complx_copy2(wsp->ham_blk);
+			blk_cm_zero(wsp->Hcplx);
+		}
+		if (!s->Hassembly) { // T20 term
+			cdw = Cnull;
+			for (j=1; j<6; j++) {
+				cdw = Cadd(cdw,Cmul(Cmul(wsp->HF_Rrot[i][j],d20[j]),R[j]));
+			}
+			assert(fabs(cdw.im) < TINY);
+			if (fabs(cdw.re) > TINY) blk_dm_multod(wsp->ham_blk,wsp->HF[i]->blk_T,cdw.re);
+		}
+		// now T2+-1 terms
+		if (d2 == NULL) d2 = wigner2(0,wsp->brl,0);
+		cdw = Cnull; // D2-1
+		for (j=1; j<6; j++) {
+			cdw = Cadd(cdw,Cmul(Cmul(wsp->HF_Rrot[i][j],d2->data[j+4]),R[j]));
+		}
+		blk_cm_multocr(wsp->Hcplx,wsp->HF[i]->blk_Tb,cdw);
+		cdw = Cnull; // D2+1
+		for (j=1; j<6; j++) {
+			cdw = Cadd(cdw,Cmul(Cmul(wsp->HF_Rrot[i][j],d2->data[j+14]),R[j]));
+		}
+		blk_cm_multocr(wsp->Hcplx,wsp->HF[i]->blk_Ta,cdw);
+	}
 
 	/* offset terms */
 	if (wsp->offset != NULL || wsp->inhom_offset != NULL) {
@@ -1238,6 +1522,8 @@ void ham_hamilton_integrate(Sim_info *s, Sim_wsp *wsp, double dur)
 
 	free_complx_vector(d20);
 	if (d2 != NULL) free_complx_matrix(d2);
+
+	if (wsp->Hcplx != NULL) blk_cm_multocr(wsp->Hcplx,wsp->ham_blk,Cunit);
 
 }
 
