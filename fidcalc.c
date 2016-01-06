@@ -178,16 +178,17 @@ void scan_contrib_direct(mat_complx *rho, mat_complx **dets, int Ng, int *irow, 
 
 void direct_acqblock(Tcl_Interp *interp,Tcl_Obj *obj,Sim_info *sim,Sim_wsp *wsp)
 {
-	int i, k=0, l=0, m=0, phase;
+	int i, ii, k=0, l=0, m=0, phase;
 	double cosph, sinph, t0;
 	complx *fidptr, z;
 	mat_complx *rho, *det;
 	blk_mat_complx *Ud, *T;
 
 	/* acquire first point now */
-	_evolve_with_prop(sim,wsp);
-	_reset_prop(sim,wsp);
-	fidptr = &(wsp->fid[++(wsp->curr_nsig)]);
+	_acq(sim,wsp,wsp->acqphase,1);
+//	_evolve_with_prop(sim,wsp);
+//	_reset_prop(sim,wsp);
+//	fidptr = &(wsp->fid[++(wsp->curr_nsig)]);
 	if ( fabs(wsp->acqphase) < TINY ) {
 		phase = 0;
 		cosph = 1;
@@ -197,18 +198,18 @@ void direct_acqblock(Tcl_Interp *interp,Tcl_Obj *obj,Sim_info *sim,Sim_wsp *wsp)
 		cosph = cos(wsp->acqphase*DEG2RAD);
 		sinph = sin(wsp->acqphase*DEG2RAD);
 	}
-	if (sim->acq_adjoint == 0) {
-		z = cm_trace(wsp->fdetect,wsp->sigma);
-	} else {
-		z = cm_trace_adjoint(wsp->fdetect,wsp->sigma);
-	}
-	if (phase) {
-		fidptr->re += cosph*z.re+sinph*z.im;
-		fidptr->im += -sinph*z.re+cosph*z.im;
-	} else {
-		fidptr->re += z.re;
-		fidptr->im += z.im;
-	}
+//	if (sim->acq_adjoint == 0) {
+//		z = cm_trace(wsp->fdetect,wsp->sigma);
+//	} else {
+//		z = cm_trace_adjoint(wsp->fdetect,wsp->sigma);
+//	}
+//	if (phase) {
+//		fidptr->re += cosph*z.re+sinph*z.im;
+//		fidptr->im += -sinph*z.re+cosph*z.im;
+//	} else {
+//		fidptr->re += z.re;
+//		fidptr->im += z.im;
+//	}
 
 	/* initialize propagator counters */
 	wsp->acqblock_sto = ACQBLOCK_STO_INI;  // points to free position
@@ -281,9 +282,64 @@ void direct_acqblock(Tcl_Interp *interp,Tcl_Obj *obj,Sim_info *sim,Sim_wsp *wsp)
 	//blk_cm_print(T,"U total i basis 0");
 	//exit(1);
 
+	/* diagonalize, if necessary */
+	if ( blk_cm_isdiag(Ud) ) {
+		DEBUGPRINT("\t\t prop is already diagonal, or DO NOT diagonalize big (>%d) sparse matrices\n",MAXDIMDIAGONALIZE);
+		T = NULL;
+	} else {
+		/* want to diagonalize */
+		if (sim->sparse) {
+			DEBUGPRINT("\t\t sparse, diagonalize prop at least partly\n");
+			T = blk_cm_diag_partly(Ud);
+		} else {
+			DEBUGPRINT("\t\t need to diagonalize prop\n");
+			//blk_cm_print(Ud,"will diagonalize this");
+			T = blk_cm_diag(Ud);
+		}
+		//blk_cm_print(Ud,"result"); blk_cm_print(T,"transformation");
+		DEBUGPRINT("\t 333\n");
+	}
+
+	int NN = (sim->Nfstart > sim->Nfdetect ? sim->Nfstart : sim->Nfdetect);
+
+	/* prepare transformed matrices */
+	rho = NULL;
+	det = NULL;
+	for (i=0; i<NN; i++) {
+		// rho is initiated every time as it changes during acquisition
+		if (rho != NULL) free_complx_matrix(rho);
+		rho = cm_change_basis_2(wsp->sigma[i % sim->Nfstart],Ud->basis,sim);
+		if (T != NULL) blk_simtrans_adj(rho,T,sim);
+		// det is initiated optimally
+		if (sim->Nfdetect == 1) { // do transformations only once
+			if (det == NULL) {
+				det = wsp->matrix[k] = cm_change_basis_2(wsp->fdetect[0],Ud->basis,sim);
+				for (ii=k; ii<m; ii++) {
+					wsp->matrix[ii+1] = cm_dup(det);
+					blk_simtrans_adj(wsp->matrix[ii+1],wsp->STO[ii],sim);
+					if (T != NULL) blk_simtrans_adj(wsp->matrix[ii+1],T,sim);
+				}
+				if (T != NULL) blk_simtrans_adj(det,T,sim);
+			}
+		} else {  // do transformations every time
+			if (det != NULL) {
+				for (ii=k; ii<=m; ii++) {
+					free_complx_matrix(wsp->matrix[ii]);
+					wsp->matrix[ii] = NULL;
+				}
+			}
+			det = wsp->matrix[k] = cm_change_basis_2(wsp->fdetect[i % sim->Nfdetect],Ud->basis,sim);
+			for (ii=k; ii<m; ii++) {
+				wsp->matrix[ii+1] = cm_dup(det);
+				blk_simtrans_adj(wsp->matrix[ii+1],wsp->STO[ii],sim);
+				if (T != NULL) blk_simtrans_adj(wsp->matrix[ii+1],T,sim);
+			}
+			if (T != NULL) blk_simtrans_adj(det,T,sim);
+		}
+
 	/* prepare transformed matrices */
 	//DEBUGPRINT("\t pointers wsp->fdetect = %p\n",wsp->fdetect);
-	det = wsp->matrix[k] = cm_change_basis_2(wsp->fdetect,Ud->basis,sim);
+/*	det = wsp->matrix[k] = cm_change_basis_2(wsp->fdetect,Ud->basis,sim);
 	rho = cm_change_basis_2(wsp->sigma,Ud->basis,sim);
 	if ( blk_cm_isdiag(Ud) ) {
 		DEBUGPRINT("\t\t prop is already diagonal, or DO NOT diagonalize big (>%d) sparse matrices\n",MAXDIMDIAGONALIZE);
@@ -294,7 +350,7 @@ void direct_acqblock(Tcl_Interp *interp,Tcl_Obj *obj,Sim_info *sim,Sim_wsp *wsp)
 			wsp->STO[i] = NULL;
 		}
 	} else {
-		/* want to diagonalize */
+		// want to diagonalize
 		if (sim->sparse) {
 			DEBUGPRINT("\t\t sparse, diagonalize prop at least partly\n");
 			T = blk_cm_diag_partly(Ud);
@@ -323,39 +379,43 @@ void direct_acqblock(Tcl_Interp *interp,Tcl_Obj *obj,Sim_info *sim,Sim_wsp *wsp)
 	//for (i=k; i<=m; i++) cm_print(wsp->matrix[i],"dets");
 	//printf("rho is %s, nnz=%d\n",matrix_type(rho->type), cm_nnz(rho));
 	//for (i=k; i<=m; i++) printf("det(%d) is %s, nnz=%d\n",i,matrix_type(wsp->matrix[i]->type),cm_nnz(wsp->matrix[i]));
-
+*/
 	/* run the acquisition */
-	DEBUGPRINT("\n----> acquisition\n");
-	l = k+1;
-	for (i=1; i<wsp->Nacq; i++) {
-		if ( l > m ) {
-			DEBUGPRINT("\t\t   period finished\n");
-			l = k;
-			blk_simtrans(rho,Ud,sim);
-			//printf(" (%d) ",cm_nnz(rho));
-		}
-		if (sim->acq_adjoint) {
-			z = cm_trace_adjoint(wsp->matrix[l],rho);
-		} else {
-			z = cm_trace(wsp->matrix[l],rho);
-		}
-		fidptr++;
-		if (phase) {
-			fidptr->re += cosph*z.re+sinph*z.im;
-			fidptr->im += -sinph*z.re+cosph*z.im;
-		} else {
-			fidptr->re += z.re;
-			fidptr->im += z.im;
-		}
-		l++;
-		DEBUGPRINT("\t\t %i is done\n",i);
-	}
+		fidptr = &(wsp->fid[wsp->curr_nsig +i*sim->ntot]);
+		DEBUGPRINT("\n----> acquisition\n");
+		l = k+1;
+		for (ii=1; ii<wsp->Nacq; ii++) {
+			if ( l > m ) {
+				DEBUGPRINT("\t\t   period finished\n");
+				l = k;
+				blk_simtrans(rho,Ud,sim);
+				//printf(" (%d) ",cm_nnz(rho));
+			}
+			if (sim->acq_adjoint) {
+				z = cm_trace_adjoint(wsp->matrix[l],rho);
+			} else {
+				z = cm_trace(wsp->matrix[l],rho);
+			}
+			fidptr++;
+			if (phase) {
+				fidptr->re += cosph*z.re+sinph*z.im;
+				fidptr->im += -sinph*z.re+cosph*z.im;
+			} else {
+				fidptr->re += z.re;
+				fidptr->im += z.im;
+			}
+			l++;
+			DEBUGPRINT("\t\t %i is done\n",i);
+		} // fid acquisition loop
+	} // loop over multiple fstart/fdetect
 	wsp->curr_nsig += wsp->Nacq - 1;
+	if (T != NULL) free_blk_mat_complx(T);
 	free_complx_matrix(rho);
-	free_blk_mat_complx(wsp->STO[m]); wsp->STO[m] = NULL;
 	for (i=k; i<=m; i++) {
-		free_complx_matrix(wsp->matrix[i]);
+		free_complx_matrix(wsp->matrix[i]); // this is dets
 		wsp->matrix[i] = NULL;
+		free_blk_mat_complx(wsp->STO[i]);  // this is props
+		wsp->STO[i] = NULL;
 	}
 
 	//cv_print(wsp->fid,"acq_block FID");
@@ -822,27 +882,9 @@ void direct_acqblock_freq(Tcl_Interp *interp,Tcl_Obj *obj,Sim_info *sim,Sim_wsp 
 	mat_complx *rho, *det;
 	blk_mat_complx *Ud, *T, *TT;
 
-	// prepare phase factor
-	if ( fabs(wsp->acqphase) < TINY ) {
-		phase = 0;
-		cosph = 1;
-		sinph = 0;
-	} else {
-		phase = 1;
-		cosph = cos(wsp->acqphase*DEG2RAD);
-		sinph = sin(wsp->acqphase*DEG2RAD);
-	}
-
-	// prepare initial density matrix
+	// prepare initial density matrix and clear propagator
 	_evolve_with_prop(sim,wsp);
 	_reset_prop(sim,wsp);
-	// prepare detection operator
-	if (sim->acq_adjoint) {
-		if (wsp->fdetect != sim->fdetect)
-			cm_adjointi(wsp->fdetect);
-		else
-			wsp->fdetect = cm_adjoint(sim->fdetect);
-	}
 
 	// measure hamiltonian period - should be all included inside acq_block {}
 	wsp->evalmode = EM_MEASURE;
@@ -907,9 +949,18 @@ void direct_acqblock_freq(Tcl_Interp *interp,Tcl_Obj *obj,Sim_info *sim,Sim_wsp 
 	//blk_cm_print(T,"U total i basis 0");
 	//exit(1);
 
-	// prepare transformed matrices
-	det = wsp->matrix[k] = cm_change_basis_2(wsp->fdetect,Ud->basis,sim);
-	rho = cm_change_basis_2(wsp->sigma,Ud->basis,sim);
+	// prepare fid/spc phase factor
+	if ( fabs(wsp->acqphase) < TINY ) {
+		phase = 0;
+		cosph = 1;
+		sinph = 0;
+	} else {
+		phase = 1;
+		cosph = cos(wsp->acqphase*DEG2RAD);
+		sinph = sin(wsp->acqphase*DEG2RAD);
+	}
+
+	// diagonalize total propagator and calculate frequencies
 	if (blk_cm_isdiag(Ud)) {
 		T = NULL;
 	} else {
@@ -925,130 +976,146 @@ void direct_acqblock_freq(Tcl_Interp *interp,Tcl_Obj *obj,Sim_info *sim,Sim_wsp 
 		for (j=0; j<Ud->blk_dims[i]; j++) {
 			*dptr = -Carg((*z1))/period*1.0e6;
 			//printf("freq[%d] = %g\n",j,*dptr);
-			//*z1 = CRpow(*z1,1.0/(double)sim->points_per_cycle);
-			//z1->re = cos(*dptr*period*1.0e-6/sim->points_per_cycle);
-			//z1->im = -sin(*dptr*period*1.0e-6/sim->points_per_cycle);
 			z1++; dptr++;
 		}
 	}
 	//blk_cm_print(Ud,"Ud");
 
-	if (T == NULL) {
-		// Ud was diagonal
-		for (i=k; i<m; i++) {
-			//TT = blk_cm_mul(wsp->STO[i],Ud);
-			//free_blk_mat_complx(wsp->STO[i]);
-			//wsp->STO[i] = NULL;
-			//wsp->matrix[i+1] = cm_dup(det);
-			//blk_simtrans_adj(wsp->matrix[i+1],TT,sim);
-			//free_blk_mat_complx(TT);
-			wsp->matrix[i+1] = cm_dup(det);
-			blk_simtrans_adj(wsp->matrix[i+1],wsp->STO[i],sim);
-			free_blk_mat_complx(wsp->STO[i]);
-			wsp->STO[i] = NULL;
-		}
-	} else {
-		// Ud was diagonalized
-		for (i=k; i<m; i++) {
-			//TT = blk_cm_mul(wsp->STO[i],T);
-			//free_blk_mat_complx(wsp->STO[i]);
-			//wsp->STO[i] = blk_cm_mul(TT,Ud);
-			//free_blk_mat_complx(TT);
-			//wsp->matrix[i+1] = cm_dup(det);
-			//blk_simtrans_adj(wsp->matrix[i+1],wsp->STO[i],sim);
-			//free_blk_mat_complx(wsp->STO[i]);
-			//wsp->STO[i] = NULL;
-			TT = blk_cm_mul(wsp->STO[i],T);
-			free_blk_mat_complx(wsp->STO[i]);
-			wsp->STO[i] = NULL;
-			wsp->matrix[i+1] = cm_dup(det);
-			blk_simtrans_adj(wsp->matrix[i+1],TT,sim);
-			free_blk_mat_complx(TT);
-		}
-		blk_simtrans_adj(rho,T,sim);
-		blk_simtrans_adj(det,T,sim);
-		free_blk_mat_complx(T);
-	}
-
-	// control print out
-	//cm_print(rho,"rho");
-	//for (i=k; i<=m; i++) cm_print(wsp->matrix[i],"dets");
-
-	// construct the spectrum
-	int r, c, N = sim->points_per_cycle;
-	double binsize = sim->sw*2*M_PI/sim->np;
-	int direction = sim->conjugate_fid ? -1 : +1;
-	int binshift = 0;
-	if (sim->frame == LABFRAME) {
-		double dum = ss_gamma(sim->ss,sim->obs_nuc)*sim->specfreq/ss_gamma1H()*2*M_PI;
-		//printf("obsnuc: %d, g:%g, gh:%g, frq: %g",sim->obs_nuc,ss_gamma(sim->ss,sim->obs_nuc),ss_gamma1H(),dum/2/M_PI);
-		dum = dum - floor(dum/freqT)*freqT;
-		binshift = (int)(dum/binsize);
-		//printf("\nBinshift is %d, freqT=%g\n",binshift,freqT/2/M_PI);
-	}
-	//printf("binsize = %g\n",binsize);
-    fftw_complex *fftin = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * N);
-    fftw_complex *fftout = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * N);
-    //fftw_plan p = fftw_plan_dft_1d(N, fftin, fftout, FFTW_FORWARD, FFTW_ESTIMATE);
-
     int *irow, *icol, *ic;
     irow = (int*)malloc((matdim+1)*sizeof(int));
     icol = ic = (int*)malloc(matdim*matdim*sizeof(int)); // just large enough
-    scan_contrib_direct(rho,&wsp->matrix[k],N,irow,icol);
+	int r, c, N = sim->points_per_cycle;
+	double binsize = sim->sw*2*M_PI/sim->np;
+    fftw_complex *fftin = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * N);
+    fftw_complex *fftout = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * N);
 
-	ic = icol;
-	for (r=1; r<=matdim; r++) {
-		int nc = irow[r] - irow[r-1];
-		for (i=0; i<nc; i++) {
-			c = *ic;
-			//zz = cm_getelem(rho,r,c);
-			zz = cm_getelem(rho,c,r);
-			//printf("zz = rho(%d,%d) = %g, %g\n",c,r,zz.re, zz.im);
-			//diff = freq[c-1] - freq[r-1];
-			diff = freq[r-1] - freq[c-1];
-			//printf("freq = %g\n",diff);
-			complx ph = Cexpi(-diff*period*1.0e-6/N);
-			complx phmul = Complx(1.0,0.0);
-			for (j=0; j<N; j++) {
-				//z = Cmul(phmul,cm_getelem(wsp->matrix[k+j],c,r));
-				z = Cmul(phmul,cm_getelem(wsp->matrix[k+j],r,c));
-				//cm_print(wsp->matrix[k+j],"wsp matrix");
-				//printf("z = %g, %g (phmul = %g, %g)\t",z.re, z.im, phmul.re, phmul.im);
-				fftin[j][0] = zz.re*z.re - zz.im*z.im;
-				fftin[j][1] = zz.im*z.re + zz.re*z.im;
-				phmul = Cmul(phmul,ph);
-				//printf("fftin[%d] = %g, %g\n",j,fftin[j][0],fftin[j][1]);
+    int NN = (sim->Nfstart > sim->Nfdetect ? sim->Nfstart : sim->Nfdetect);
+	int ii;
+	/* prepare transformed matrices */
+	rho = NULL;
+	det = NULL;
+	for (i=0; i<NN; i++) {
+		if (sim->Nfstart == 1) {// rho is initiated only once
+			if (rho == NULL) {
+				rho = cm_change_basis_2(wsp->sigma[0],Ud->basis,sim);
+				if (T != NULL) blk_simtrans_adj(rho,T,sim);
 			}
-			//fftw_execute(p);
-			fftw_execute_dft(sim->fftw_plans[wsp->thread_id],fftin,fftout);
-			for (j=0; j<N; j++) {
-				//bin = (int)(1.5-(diff + freqT*(j-N/2+1))/binsize +sim->np/2);
-				bin = (int)(1.5+direction*(diff + freqT*(j-N/2+1))/binsize +sim->np/2) + binshift;
-				//printf("index %d -> freq = %g, bin %d -> ",j,diff+freqT*(j-N/2+1),bin);
-				while (bin < 1) bin += sim->np;
-				while (bin > sim->np) bin -= sim->np;
-				//printf("%d\n",bin);
-				assert(bin >= 1 && bin <= sim->np);
-				int idx = (j+N/2+1)%N;
-				wsp->fid[bin].re += fftout[idx][0]*cosph - fftout[idx][1]*sinph;
-				wsp->fid[bin].im += fftout[idx][1]*cosph + fftout[idx][0]*sinph;
-				//printf(" sums to %g, %g\n",wsp->fid[bin].re,wsp->fid[bin].im);
-				//printf("\t elem %d: (%g %g)\n",j,fftout[idx][0],fftout[idx][1]);
-			}
-			ic++;
+		} else { // rho initiated as needed to cover all elements
+			if (rho != NULL) free_complx_matrix(rho);
+			rho = cm_change_basis_2(wsp->sigma[i % sim->Nfstart],Ud->basis,sim);
+			if (T != NULL) blk_simtrans_adj(rho,T,sim);
 		}
-	}
+		// det is initiated optimally
+		if (sim->Nfdetect == 1) { // do transformations only once
+			if (det == NULL) {
+				det = wsp->matrix[k] = cm_change_basis_2(wsp->fdetect[0],Ud->basis,sim);
+				if (sim->acq_adjoint) cm_adjointi(det);
+				for (ii=k; ii<m; ii++) {
+					wsp->matrix[ii+1] = cm_dup(det);
+					if (T == NULL) {
+						blk_simtrans_adj(wsp->matrix[ii+1],wsp->STO[ii],sim);
+					} else {
+						TT = blk_cm_mul(wsp->STO[ii],T);
+						blk_simtrans_adj(wsp->matrix[ii+1],TT,sim);
+						free_blk_mat_complx(TT);
+					}
+				}
+				if (T != NULL) blk_simtrans_adj(det,T,sim);
+			}
+		} else {  // do transformations every time
+			if (det != NULL) {
+				for (ii=k; ii<=m; ii++) {
+					free_complx_matrix(wsp->matrix[ii]);
+					wsp->matrix[ii] = NULL;
+				}
+			}
+			det = wsp->matrix[k] = cm_change_basis_2(wsp->fdetect[i % sim->Nfdetect],Ud->basis,sim);
+			if (sim->acq_adjoint) cm_adjointi(det);
+			for (ii=k; ii<m; ii++) {
+				wsp->matrix[ii+1] = cm_dup(det);
+				if (T == NULL) {
+					blk_simtrans_adj(wsp->matrix[ii+1],wsp->STO[ii],sim);
+				} else {
+					TT = blk_cm_mul(wsp->STO[ii],T);
+					blk_simtrans_adj(wsp->matrix[ii+1],TT,sim);
+					free_blk_mat_complx(TT);
+				}
+			}
+			if (T != NULL) blk_simtrans_adj(det,T,sim);
+		}
+		// control print out
+		//cm_print(rho,"rho");
+		//for (ii=k; ii<=m; ii++) cm_print(wsp->matrix[ii],"dets");
+
+	// construct the spectrum
+		int direction = sim->conjugate_fid[i % sim->Nfdetect] ? -1 : +1;
+		int binshift = 0;
+		if (sim->frame == LABFRAME) {
+			double dum = ss_gamma(sim->ss,sim->obs_nuc[i % sim->Nfdetect])*sim->specfreq/ss_gamma1H()*2*M_PI;
+			//printf("obsnuc: %d, g:%g, gh:%g, frq: %g",sim->obs_nuc,ss_gamma(sim->ss,sim->obs_nuc),ss_gamma1H(),dum/2/M_PI);
+			dum = dum - floor(dum/freqT)*freqT;
+			binshift = (int)(dum/binsize);
+			//printf("\nBinshift is %d, freqT=%g\n",binshift,freqT/2/M_PI);
+		}
+		//printf("binsize = %g\n",binsize);
+		scan_contrib_direct(rho,&wsp->matrix[k],N,irow,icol);
+
+		ic = icol;
+		for (r=1; r<=matdim; r++) {
+			int nc = irow[r] - irow[r-1];
+			for (ii=0; ii<nc; ii++) {
+				c = *ic;
+				zz = cm_getelem(rho,c,r);
+				//printf("zz = rho(%d,%d) = %g, %g\n",c,r,zz.re, zz.im);
+				diff = freq[r-1] - freq[c-1];
+				//printf("freq = %g\n",diff);
+				complx ph = Cexpi(-diff*period*1.0e-6/N);
+				complx phmul = Complx(1.0,0.0);
+				for (j=0; j<N; j++) {
+					//z = Cmul(phmul,cm_getelem(wsp->matrix[k+j],c,r));
+					z = Cmul(phmul,cm_getelem(wsp->matrix[k+j],r,c));
+					//cm_print(wsp->matrix[k+j],"wsp matrix");
+					//printf("z = %g, %g (phmul = %g, %g)\t",z.re, z.im, phmul.re, phmul.im);
+					fftin[j][0] = zz.re*z.re - zz.im*z.im;
+					fftin[j][1] = zz.im*z.re + zz.re*z.im;
+					phmul = Cmul(phmul,ph);
+					//printf("fftin[%d] = %g, %g\n",j,fftin[j][0],fftin[j][1]);
+				}
+				//fftw_execute(p);
+				fftw_execute_dft(sim->fftw_plans[wsp->thread_id],fftin,fftout);
+				for (j=0; j<N; j++) {
+					//bin = (int)(1.5-(diff + freqT*(j-N/2+1))/binsize +sim->np/2);
+					bin = (int)(1.5+direction*(diff + freqT*(j-N/2+1))/binsize +sim->np/2) + binshift;
+					//printf("index %d -> freq = %g, bin %d -> ",j,diff+freqT*(j-N/2+1),bin);
+					while (bin < 1) bin += sim->np;
+					while (bin > sim->np) bin -= sim->np;
+					//printf("%d\n",bin);
+					assert(bin >= 1 && bin <= sim->np);
+					bin += i*sim->ntot; // correct also for fstart/fdetect element
+					int idx = (j+N/2+1)%N;
+					wsp->fid[bin].re += fftout[idx][0]*cosph - fftout[idx][1]*sinph;
+					wsp->fid[bin].im += fftout[idx][1]*cosph + fftout[idx][0]*sinph;
+					//printf(" sums to %g, %g\n",wsp->fid[bin].re,wsp->fid[bin].im);
+					//printf("\t elem %d: (%g %g)\n",j,fftout[idx][0],fftout[idx][1]);
+				}
+				ic++;
+			}
+		}
+	} // loop over fstart/fdetect elements
 
 	free(irow);
 	free(icol);
-    //fftw_destroy_plan(p);
     fftw_free(fftin); fftw_free(fftout);
+    free(freq);
 
 	wsp->curr_nsig += wsp->Nacq - 1;
 	free_complx_matrix(rho);
+	if (T != NULL) free_blk_mat_complx(T);
 	for (i=k; i<=m; i++) {
 		free_complx_matrix(wsp->matrix[i]);
 		wsp->matrix[i] = NULL;
+		free_blk_mat_complx(wsp->STO[i]);
+		wsp->STO[i] = NULL;
 	}
 }
 /***********************************/
@@ -1087,11 +1154,17 @@ void gcompute_acqblock(Tcl_Interp *interp,Tcl_Obj *obj,Sim_info *sim,Sim_wsp *ws
 		} else {
 			wsp->STO[wsp->acqblock_sto] = blk_cm_mul(wsp->U,wsp->STO[wsp->acqblock_sto - 1]);
 		}
+		//printf("acq_block storing STO[%d]\n",wsp->acqblock_sto);
 		//blk_cm_print(wsp->U,"gcompute_acqblock step U");
 		//blk_cm_print(wsp->STO[wsp->acqblock_sto],"gcompute_acqblock U(i)");
 		// store hopefully unchanged sigma in the basis of acq_block propagators
 		//      but only if it changed...
-		if (q) wsp->matrix[wsp->acqblock_sto] = cm_change_basis_2(wsp->sigma,wsp->U->basis,sim);
+		if (q) {
+			int ii;
+			for (ii=0; ii<sim->Nfstart; ii++) {
+				wsp->matrix[wsp->acqblock_sto+ii*sim->ngamma] = cm_change_basis_2(wsp->sigma[ii],wsp->U->basis,sim);
+			}
+		}
 		acqblock_sto_incr(wsp);
 	}
 }
@@ -1100,9 +1173,14 @@ void gcompute_acqblock(Tcl_Interp *interp,Tcl_Obj *obj,Sim_info *sim,Sim_wsp *ws
  * subroutine of new_gcompute - algorithm without diagonalization
  *   DO NOT call directly, it assumes some tasks already performed
  *   in new_gcompute
+ ****************
+ * seems not to be in use anymore... Z.T. 14.12.2015
  */
 void new_gcompute_sparse(Sim_info *sim,Sim_wsp *wsp,int k,int Ng,int m,double cosph,double sinph)
 {
+	fprintf(stderr,"Error: new_gcompute_sparse: Ups, sorry, I have deleted this function. Contact developer.\n");
+	exit(1);
+/*** original code commented out  ***
 	blk_mat_complx *Uf, *Upow = NULL;
 	int i, l, ig, F_idx, F_last, phase=0;
 	complx *fidptr, z, zval;
@@ -1116,15 +1194,15 @@ void new_gcompute_sparse(Sim_info *sim,Sim_wsp *wsp,int k,int Ng,int m,double co
 
 	if (fabs(cosph) + fabs(sinph) > TINY) phase = 1;
 
-	/* test for unitarity */
+	// test for unitarity
 	//Uf = cm_adjoint(wsp->STO[k+Ng-1]);
 	//Upow = cm_mul(Uf,wsp->STO[k+Ng-1]);
 	//cm_print(Upow,"Utot+ * Utot");
 	//exit(1);
-	/* end of the test */
+	// end of the test
 
 	l = k+Ng-1;
-	/* continue with transforming the sigmas and dets */
+	// continue with transforming the sigmas and dets
 	Uf = wsp->STO[l];
 	mat_complx *det = wsp->matrix[k+Ng];
 	for (i=k; i<l; i++) {
@@ -1135,7 +1213,7 @@ void new_gcompute_sparse(Sim_info *sim,Sim_wsp *wsp,int k,int Ng,int m,double co
 		wsp->STO[i] = NULL;
 	}
 
-	/* acquisition */
+	// acquisition
 	F_idx = k+Ng;
 	F_last = k+Ng+Ng-1;
 	m1 = m / Ng; m2 = m % Ng;
@@ -1166,7 +1244,7 @@ void new_gcompute_sparse(Sim_info *sim,Sim_wsp *wsp,int k,int Ng,int m,double co
 	}
 	cv_muld(wsp->fid, 1.0/(double)Ng);
 
-	/* cleaning */
+	// cleaning
 	if (Upow != NULL) free_blk_mat_complx(Upow);
 	free_blk_mat_complx(wsp->STO[l]);
 	wsp->STO[l] = NULL;
@@ -1176,6 +1254,7 @@ void new_gcompute_sparse(Sim_info *sim,Sim_wsp *wsp,int k,int Ng,int m,double co
 		free_complx_matrix(wsp->matrix[Ng+i]);
 		wsp->matrix[Ng+i] = NULL;
 	}
+***/
 }
 
 /**********
@@ -2762,8 +2841,14 @@ void collect_spc_interpol(acq_data *acqdata)
 }
 *******/
 
+/****
+ * This looks not used anymore... Z.T. 14.12.2015
+ */
 void collect_fid_interpol_direct(acq_data *acqdata)
 {
+	fprintf(stderr,"Error: collect_fid_interpol_direct: Ups, sorry, I have deleted this function. Contact developer.\n");
+	exit(1);
+/* original code commented out ***
 	int i, j, r, c, *ic, ig, dataidx;
 	int fnnz = acqdata->irow[acqdata->dim] - 1;
 	complx *Ud, Frs, ph, phfac;
@@ -2799,10 +2884,14 @@ void collect_fid_interpol_direct(acq_data *acqdata)
 			}
 		}
 	}
+***/
 }
 
 void collect_spc_interpol_direct(acq_data *acqdata)
 {
+	fprintf(stderr,"Error: collect_spc_interpol_direct: Ups, sorry, I have deleted this function. Contact developer.\n");
+	exit(1);
+/*** original code commented out ***
 	int i, r, c, bin, *ic, ig, dataidx;
 	double *freq, *dptr, diff, binsize;
 	int annz = acqdata->irow[acqdata->dim] - 1;
@@ -2859,6 +2948,7 @@ void collect_spc_interpol_direct(acq_data *acqdata)
 	free(freq);
     fftw_destroy_plan(p1);
     fftw_free(fftin1); fftw_free(fftout1);
+****/
 }
 
 /*****
@@ -3204,10 +3294,12 @@ void new_gcompute_time(Sim_info *sim, Sim_wsp *wsp)
 
 /****
  * evaluates pulse sequence to generate gamma-dependent sigma and props
+ * The total prop gets diagonalized
  */
-void gcompute_props(Sim_info *sim, Sim_wsp *wsp) {
+blk_mat_complx* gcompute_props(Sim_info *sim, Sim_wsp *wsp) {
 	double dtg, t0;
 	int ig, Ng;
+	blk_mat_complx *T, *Ud;
 
 	TIMING_INIT_VAR2(tv1,tv2);
 
@@ -3252,148 +3344,166 @@ void gcompute_props(Sim_info *sim, Sim_wsp *wsp) {
 		fprintf(stderr,"Error: (i)gcompute - propagator count mismatch\n");
 		exit(1);
 	}
-	if (wsp->acqblock_sto+Ng > ACQBLOCK_STO_END) {
+	if (wsp->acqblock_sto+Ng*(1+sim->Nfstart) > ACQBLOCK_STO_END) {
+		// Ng*(sim->Nfstart-1) are filled with sigma(gamma), Ng slots for further calculations
 		fprintf(stderr,"Error: (i)gcompute - overflow in matrix buffers\n");
 		exit(1);
 	}
 
+	Ud = wsp->STO[wsp->acqblock_sto-1];
+	T = NULL;
+	if (!blk_cm_isdiag(Ud)) {
+		DEBUGPRINT("new_gcompute: will diagonalize Ud\n");
+		if (sim->interpolation == 0) {
+			T = blk_cm_diag(Ud);
+		} else {
+			T = blk_cm_diag_sort(Ud);
+		}
+	}
+	return T;
 }
 
 /****
  * transformations of dens.matrix and detect op. to eigenbasis of period propagator
  */
-void gcompute_transforms(Sim_info *sim, Sim_wsp *wsp) {
-	blk_mat_complx *Ud, *T;
+void gcompute_transforms(Sim_info *sim, Sim_wsp *wsp, blk_mat_complx *T, int nn) {
+	blk_mat_complx *Ud;
 	mat_complx *det;
-	int i, l, Ng;
+	int i, Ng, is, id, ini;
 
 	TIMING_INIT_VAR2(tv1,tv2);
 	TIMING_TIC(tv1);
 
 	Ng = sim->ngamma;
-	l = wsp->acqblock_sto-1;
-	Ud = wsp->STO[l];
-	if (sim->acq_adjoint) {
-		if (wsp->fdetect != sim->fdetect)
-			cm_adjointi(wsp->fdetect);
-		else
-			wsp->fdetect = cm_adjoint(sim->fdetect);
-	}
-	det = wsp->matrix[l+1] = cm_change_basis_2(wsp->fdetect,Ud->basis,sim);
-	if (wsp->matrix[ACQBLOCK_STO_INI] == NULL) {
+	Ud = wsp->STO[wsp->acqblock_sto-1];
+
+	is = nn % sim->Nfstart;
+	id = nn % sim->Nfdetect;
+	ini = ACQBLOCK_STO_INI + sim->Nfstart*Ng;
+
+	det = wsp->matrix[ini+Ng] = cm_change_basis_2(wsp->fdetect[id],Ud->basis,sim);
+    if (sim->acq_adjoint) cm_adjointi(det);
+
+	if (wsp->matrix[ACQBLOCK_STO_INI] == NULL) { // gamma-independent rho
 		if (sim->EDsymmetry == 1) { // ED symmetry present
-			if (blk_cm_isdiag(Ud)) {
-				for (i=ACQBLOCK_STO_INI; i<l; i++) {
-					DEBUGPRINT("new_gcompute: Ud is diagonal\n");
-					wsp->matrix[i+Ng+1] = cm_dup(det);
-					blk_simtrans_adj(wsp->matrix[i+Ng+1],wsp->STO[i],sim);
-					free_blk_mat_complx(wsp->STO[i]);
-					wsp->STO[i] = NULL;
+			if (T == NULL) {
+				for (i=1; i<Ng; i++) {
+					wsp->matrix[i+Ng+ini] = cm_dup(det);
+					blk_simtrans_adj(wsp->matrix[i+Ng+ini],wsp->STO[ACQBLOCK_STO_INI+i-1],sim);
 				}
 			} else {
-				DEBUGPRINT("new_gcompute: will diagonalize Ud\n");
-				if (sim->interpolation == 0) {
-					T = blk_cm_diag(Ud);
-				} else {
-					T = blk_cm_diag_sort(Ud);
-				}
-				for (i=ACQBLOCK_STO_INI; i<l; i++) {
-					// this should be faster:
-					blk_mat_complx *dumblk = blk_cm_mul(wsp->STO[i],T);
-					free_blk_mat_complx(wsp->STO[i]);
-					wsp->STO[i] = NULL;
-					wsp->matrix[i+Ng+1] = cm_dup(det);
-					blk_simtrans_adj(wsp->matrix[i+Ng+1],dumblk,sim);
+				for (i=1; i<Ng; i++) {
+					wsp->matrix[i+Ng+ini] = cm_dup(det);
+					blk_mat_complx *dumblk = blk_cm_mul(wsp->STO[ACQBLOCK_STO_INI+i-1],T);
+					blk_simtrans_adj(wsp->matrix[i+Ng+ini],dumblk,sim);
 					free_blk_mat_complx(dumblk);
 				}
 				blk_simtrans_adj(det,T,sim);
-				free_blk_mat_complx(T);
 			}
 		} else {  // no ED symmetry but full job needs to be done
-			wsp->matrix[ACQBLOCK_STO_INI] = cm_change_basis_2(wsp->fstart,Ud->basis,sim);
-			if (blk_cm_isdiag(Ud)) {
-				for (i=ACQBLOCK_STO_INI; i<l; i++) {
-					DEBUGPRINT("new_gcompute: Ud is diagonal\n");
-					wsp->matrix[i+1] = cm_dup(wsp->matrix[ACQBLOCK_STO_INI]);
-					blk_simtrans_adj(wsp->matrix[i+1],wsp->STO[i],sim);
-					wsp->matrix[i+Ng+1] = cm_dup(det);
-					blk_simtrans_adj(wsp->matrix[i+Ng+1],wsp->STO[i],sim);
-					free_blk_mat_complx(wsp->STO[i]);
-					wsp->STO[i] = NULL;
+			int do_rho = 1;
+			if ( (sim->Nfstart == 1) && (nn > 0) ) do_rho = 0;
+			if (do_rho) {
+				wsp->matrix[ini] = cm_change_basis_2(wsp->fstart[is],Ud->basis,sim);
+			}
+			if (T == NULL) {
+				for (i=1; i<Ng; i++) {
+					if (do_rho) {
+						wsp->matrix[i+ini] = cm_dup(wsp->matrix[ini]);
+						blk_simtrans_adj(wsp->matrix[i+ini],wsp->STO[ACQBLOCK_STO_INI+i-1],sim);
+					}
+					wsp->matrix[i+Ng+ini] = cm_dup(det);
+					blk_simtrans_adj(wsp->matrix[i+Ng+ini],wsp->STO[ACQBLOCK_STO_INI+i-1],sim);
 				}
 			} else {
-				DEBUGPRINT("new_gcompute: will diagonalize Ud\n");
-				// need to diagonalize final propagator
-				if (sim->interpolation == 0) {
-					T = blk_cm_diag(Ud);
-				} else {
-					T = blk_cm_diag_sort(Ud);
-				}
-				for (i=ACQBLOCK_STO_INI; i<l; i++) {
-					// this should be faster:
-					blk_mat_complx *dumblk = blk_cm_mul(wsp->STO[i],T);
-					free_blk_mat_complx(wsp->STO[i]);
-					wsp->STO[i] = NULL;
-					wsp->matrix[i+1] = cm_dup(wsp->matrix[ACQBLOCK_STO_INI]);
-					blk_simtrans_adj(wsp->matrix[i+1],dumblk,sim);
-					wsp->matrix[i+Ng+1] = cm_dup(det);
-					blk_simtrans_adj(wsp->matrix[i+Ng+1],dumblk,sim);
+				for (i=1; i<Ng; i++) {
+					blk_mat_complx *dumblk = blk_cm_mul(wsp->STO[ACQBLOCK_STO_INI+i-1],T);
+					if (do_rho) {
+						wsp->matrix[i+ini] = cm_dup(wsp->matrix[ini]);
+						blk_simtrans_adj(wsp->matrix[i+ini],dumblk,sim);
+					}
+					wsp->matrix[i+Ng+ini] = cm_dup(det);
+					blk_simtrans_adj(wsp->matrix[i+Ng+ini],dumblk,sim);
 					free_blk_mat_complx(dumblk);
 				}
 				blk_simtrans_adj(det,T,sim);
-				blk_simtrans_adj(wsp->matrix[ACQBLOCK_STO_INI],T,sim);
-				free_blk_mat_complx(T);
+				if (do_rho) {
+					blk_simtrans_adj(wsp->matrix[ini],T,sim);
+				}
 			}
-		}
+		}  // (test on ED symmetry)
 	} else { // full job with gamma-dependent density matrices
-		if (blk_cm_isdiag(Ud)) {
-			for (i=ACQBLOCK_STO_INI; i<l; i++) {
-				DEBUGPRINT("new_gcompute: Ud is diagonal\n");
-				blk_simtrans_adj(wsp->matrix[i+1],wsp->STO[i],sim);
-				wsp->matrix[i+Ng+1] = cm_dup(det);
-				blk_simtrans_adj(wsp->matrix[i+Ng+1],wsp->STO[i],sim);
-				free_blk_mat_complx(wsp->STO[i]);
-				wsp->STO[i] = NULL;
+		int do_rho = 1;
+		if ( (sim->Nfstart == 1) && (nn > 0) ) do_rho = 0;
+		if (do_rho) {
+			wsp->matrix[ini] = wsp->matrix[ACQBLOCK_STO_INI+is*Ng];
+		}
+		if (T == NULL) {
+			for (i=1; i<Ng; i++) {
+				if (do_rho) {
+					wsp->matrix[i+ini] = wsp->matrix[ACQBLOCK_STO_INI+is*Ng+i];
+					blk_simtrans_adj(wsp->matrix[i+ini],wsp->STO[ACQBLOCK_STO_INI+i-1],sim);
+				}
+				wsp->matrix[i+Ng+ini] = cm_dup(det);
+				blk_simtrans_adj(wsp->matrix[i+Ng+ini],wsp->STO[ACQBLOCK_STO_INI+i-1],sim);
 			}
 		} else {
-			DEBUGPRINT("new_gcompute: will diagonalize Ud\n");
-			// need to diagonalize final propagator
-			if (sim->interpolation == 0) {
-				T = blk_cm_diag(Ud);
-			} else {
-				T = blk_cm_diag_sort(Ud);
-			}
-			for (i=ACQBLOCK_STO_INI; i<l; i++) {
-				// this should be faster:
-				blk_mat_complx *dumblk = blk_cm_mul(wsp->STO[i],T);
-				free_blk_mat_complx(wsp->STO[i]);
-				wsp->STO[i] = NULL;
-				blk_simtrans_adj(wsp->matrix[i+1],dumblk,sim);
-				wsp->matrix[i+Ng+1] = cm_dup(det);
-				blk_simtrans_adj(wsp->matrix[i+Ng+1],dumblk,sim);
+			for (i=1; i<Ng; i++) {
+				blk_mat_complx *dumblk = blk_cm_mul(wsp->STO[ACQBLOCK_STO_INI+i-1],T);
+				if (do_rho) {
+					wsp->matrix[i+ini] = wsp->matrix[ACQBLOCK_STO_INI+is*Ng+i];
+					blk_simtrans_adj(wsp->matrix[i+ini],dumblk,sim);
+				}
+				wsp->matrix[i+Ng+ini] = cm_dup(det);
+				blk_simtrans_adj(wsp->matrix[i+Ng+ini],dumblk,sim);
 				free_blk_mat_complx(dumblk);
 			}
 			blk_simtrans_adj(det,T,sim);
-			blk_simtrans_adj(wsp->matrix[ACQBLOCK_STO_INI],T,sim);
-			free_blk_mat_complx(T);
+			if (do_rho) {
+				blk_simtrans_adj(wsp->matrix[ini],T,sim);
+			}
 		}
 	}
 
 	TIMING_TOC(tv1,tv2,"gCOMPUTE transformations");
 }
 
+void gcompute_transforms_free(Sim_info *sim, Sim_wsp *wsp, int nn)
+{
+	int i;
+	int Ng = sim->ngamma;
+	int ini = ACQBLOCK_STO_INI + sim->Nfstart*Ng;
+	int NN = (sim->Nfstart > sim->Nfdetect ? sim->Nfstart : sim->Nfdetect);
+	int is = nn % sim->Nfstart;
+	int do_rho = 1;
+	if ( (sim->Nfstart == 1) && (nn+1 != NN) ) do_rho = 0;
+
+	for (i=0; i<Ng; i++) {
+		// free all dets
+		free_complx_matrix(wsp->matrix[ini+Ng+i]);
+		wsp->matrix[ini+Ng+i] = NULL;
+		if (do_rho) {
+			free_complx_matrix(wsp->matrix[ini+i]);
+			wsp->matrix[ini+i] = NULL;
+			wsp->matrix[ACQBLOCK_STO_INI + is*Ng + i] = NULL;
+		}
+ 	}
+}
 
 /*****
  * generate time domain FID
  */
 void gcompute_fid(Sim_info *sim, Sim_wsp *wsp) {
-	int i, ll, m, Ng, matdim, q, row, col;
+	int i, ll, m, Ng, matdim, q, row, col, nn, NN, ini;
 	double dtg;
 	complx *z1, *z2, *z3, *z4, *z5, zval;
 	mat_complx *mexp1, *mexp2;
 	blk_mat_complx *Ud;
+	double phre=0.0, phim=0.0;
 
 	TIMING_INIT_VAR2(tv1,tv2);
+	// this needs to be first as it evaluates pulse sequence
+	blk_mat_complx *T = gcompute_props(sim,wsp);
 
 	/* first check on timings */
 	Ng = sim->ngamma;
@@ -3406,138 +3516,151 @@ void gcompute_fid(Sim_info *sim, Sim_wsp *wsp) {
 		exit(1);
 	}
 
-	gcompute_props(sim,wsp);
-	gcompute_transforms(sim,wsp);
-
-	TIMING_TIC(tv1);
-	Ud = wsp->STO[wsp->acqblock_sto - 1];
-	mexp1 = complx_matrix(matdim,matdim,MAT_DENSE_DIAG,0,Ud->basis);
-	mexp2 = complx_matrix(matdim,matdim,MAT_DENSE_DIAG,0,Ud->basis);
-	z2 = mexp1->data;
-	z3 = mexp2->data;
-	for (i=0; i<Ud->Nblocks; i++) {
-		z1 = Ud->m[i].data;
-		assert(Ud->m[i].type == MAT_DENSE_DIAG || Ud->blk_dims[i] == 1);
-		for (ll=0; ll<Ud->blk_dims[i]; ll++) {
-			*z2 = *z3 = CRpow(*z1,1.0/(double)Ng);
-			z1++; z2++; z3++;
-		}
-	}
-	// averaging over gamma angles and mult by exp(-i w_rs ll tau)
-	mat_complx **tmpmx = (mat_complx**)malloc(Ng*sizeof(mat_complx*));
-	if (tmpmx == NULL) {
-		fprintf(stderr,"Error: (i)gcompute fid - no more memory\n");
-		exit(1);
-	}
-	if (sim->EDsymmetry == 1) {
-		// not very efficient here....
-		for (ll=0; ll<Ng; ll++) {
-			wsp->matrix[ACQBLOCK_STO_INI+ll] = cm_adjoint(wsp->matrix[ACQBLOCK_STO_INI+Ng+ll]);
-			cm_addto(wsp->matrix[ACQBLOCK_STO_INI+ll],wsp->matrix[ACQBLOCK_STO_INI+Ng+ll]);
-			cm_muld(wsp->matrix[ACQBLOCK_STO_INI+ll],0.5);
-		}
-	}
-	for (ll=0; ll<Ng; ll++) {
-		tmpmx[ll] = complx_matrix(matdim,matdim,MAT_DENSE,0,Ud->basis);
-		//cm_zero(wsp->STO[k+Ng+ll]);
-		cm_zero(tmpmx[ll]);
-		if (ll!=0) blk_simtrans_adj(wsp->matrix[ACQBLOCK_STO_INI+Ng+ll-1],Ud,sim);
-		gamma_ave(tmpmx[ll],&(wsp->matrix[ACQBLOCK_STO_INI]),ll,Ng);
-		if (ll!=0) {
-			simtrans(tmpmx[ll],mexp1);
-			cm_multo(mexp1,mexp2);
-		}
-	}
-	//cm_print(tmpmx[ll],"Frs*exp(-i wrs dtg)");
-	TIMING_TOC(tv1,tv2,"all gamma ave");
-
-	// acquisition
-	TIMING_TIC(tv1);
-	complx *fidptr = wsp->fid;
-	if (wsp->curr_nsig != 0) {
-		fprintf(stderr,"Error: (i)gcompute - some FID points has already been acquired. That is not allowed.\n");
-		exit(1);
-	}
-	const double m_Ng = (double)m/(double)Ng;
-	z2 = mexp1->data;
-	z3 = mexp2->data;
-	for (i=0; i<Ud->Nblocks; i++) {
-		z1 = Ud->m[i].data;
-		assert(Ud->m[i].type == MAT_DENSE_DIAG || Ud->blk_dims[i] == 1);
-		for (ll=0; ll<Ud->blk_dims[i]; ll++) {
-			z2->re = 1.0; z2->im = 0.0;
-			*z3 = CRpow(*z1,m_Ng);
-			z1++; z2++; z3++;
-		}
-	}
-	double zzre, zzim;
-	for (ll=0; ll<wsp->Nacq; ll++) {
-		Czero(zval);
-		q = (ll*m)%Ng;
-		//printf("\tll = %d, q = %d\n",ll,q);
-		z3 = mexp1->data;
-		z5 = mexp2->data;
-		complx *zstart = tmpmx[q]->data;
-		for (row=0; row<matdim; row++) {
-			z1 = z2 = zstart + row*(matdim+1);
-			zval.re += z1->re;
-			zval.im += z1->im;
-			z4 = z3;
-			for (col=row+1; col<matdim; col++) {
-				z1++;
-				z2 += matdim;
-				z4++;
-				zzre = z3->re*z4->re + z3->im*z4->im;
-				zzim = -z3->re*z4->im + z3->im*z4->re;
-				zval.re += z1->re*zzre - z1->im*zzim;
-				zval.im += z1->re*zzim + z1->im*zzre;
-				zval.re += z2->re*zzre + z2->im*zzim;
-				zval.im += -z2->re*zzim + z2->im*zzre;
-				//if (fabs(z1->re) > TINY) {
-				//	printf("r,c = %d, %d; exp = (%g, %g), F = (%g, %g)\n",row+1,col+1,zzre,zzim,z1->re,z1->im);
-				//}
-				//if (fabs(z2->re) > TINY) {
-				//	printf("r,c = %d, %d; exp = (%g, %g), F = (%g, %g)\n",col+1,row+1,zzre,-zzim,z2->re,z2->im);
-				//}
-
-			}
-			zzre = z3->re; zzim = z3->im;
-			z3->re = zzre*z5->re - zzim*z5->im;
-			z3->im = zzre*z5->im + zzim*z5->re;
-
-			z3++;
-			z5++;
-		}
-		//printf("zval = (%g, %g)\n",zval.re,zval.im);
-		fidptr++;
-		//printf("\ndense gcompute: add (%f,%f) to fid (%f,%f)\n",zval.re,zval.im,fidptr->re,fidptr->im);
-		fidptr->re = zval.re;
-		fidptr->im = zval.im;
-	}
-	wsp->curr_nsig += wsp->Nacq - 1;
 	if ( fabs(wsp->acqphase) > TINY ) {
-		zval.re = cos(wsp->acqphase*DEG2RAD)/(double)Ng;
-		zval.im = sin(wsp->acqphase*DEG2RAD)/(double)Ng;
-		cv_mulc(wsp->fid, zval);
-	} else {
-		cv_muld(wsp->fid,1.0/(double)Ng);
+		phre = cos(wsp->acqphase*DEG2RAD);
+		phim = sin(wsp->acqphase*DEG2RAD);
 	}
-	TIMING_TOC(tv1,tv2,"gcompute acquisition");
 
-	// free memory
-	free_complx_matrix(mexp1);
-	free_complx_matrix(mexp2);
-	free_blk_mat_complx(wsp->STO[wsp->acqblock_sto - 1]);
-	wsp->STO[wsp->acqblock_sto - 1] = NULL;
-	for (i=ACQBLOCK_STO_INI; i<wsp->acqblock_sto; i++) {
-		free_complx_matrix(wsp->matrix[i]);
-		wsp->matrix[i] = NULL;
-		free_complx_matrix(wsp->matrix[i+Ng]);
-		wsp->matrix[i+Ng] = NULL;
-		free_complx_matrix(tmpmx[i-ACQBLOCK_STO_INI]);
+	NN = (sim->Nfstart > sim->Nfdetect ? sim->Nfstart : sim->Nfdetect);
+	ini = ACQBLOCK_STO_INI + sim->Nfstart*Ng;
+	for (nn=0; nn<NN; nn++) {
+		gcompute_transforms(sim, wsp, T, nn);
+
+		TIMING_TIC(tv1);
+		Ud = wsp->STO[wsp->acqblock_sto - 1];
+		mexp1 = complx_matrix(matdim,matdim,MAT_DENSE_DIAG,0,Ud->basis);
+		mexp2 = complx_matrix(matdim,matdim,MAT_DENSE_DIAG,0,Ud->basis);
+		z2 = mexp1->data;
+		z3 = mexp2->data;
+		for (i=0; i<Ud->Nblocks; i++) {
+			z1 = Ud->m[i].data;
+			assert(Ud->m[i].type == MAT_DENSE_DIAG || Ud->blk_dims[i] == 1);
+			for (ll=0; ll<Ud->blk_dims[i]; ll++) {
+				*z2 = *z3 = CRpow(*z1,1.0/(double)Ng);
+				z1++; z2++; z3++;
+			}
+		}
+		// averaging over gamma angles and mult by exp(-i w_rs ll tau)
+		mat_complx **tmpmx = (mat_complx**)malloc(Ng*sizeof(mat_complx*));
+		if (tmpmx == NULL) {
+			fprintf(stderr,"Error: (i)gcompute fid - no more memory\n");
+			exit(1);
+		}
+		if (sim->EDsymmetry == 1) {
+			// not very efficient here....
+			for (ll=0; ll<Ng; ll++) { // recreate rho from det
+				wsp->matrix[ini+ll] = cm_adjoint(wsp->matrix[ini+Ng+ll]);
+				cm_addto(wsp->matrix[ini+ll],wsp->matrix[ini+Ng+ll]);
+				cm_muld(wsp->matrix[ini+ll],0.5);
+			}
+		}
+		for (ll=0; ll<Ng; ll++) {
+			tmpmx[ll] = complx_matrix(matdim,matdim,MAT_DENSE,0,Ud->basis);
+			cm_zero(tmpmx[ll]);
+			if (ll!=0) blk_simtrans_adj(wsp->matrix[ini+Ng+ll-1],Ud,sim);
+			gamma_ave(tmpmx[ll],&(wsp->matrix[ini]),ll,Ng);
+			if (ll!=0) {
+				simtrans(tmpmx[ll],mexp1);
+				cm_multo(mexp1,mexp2);
+			}
+		}
+		//cm_print(tmpmx[ll],"Frs*exp(-i wrs dtg)");
+		TIMING_TOC(tv1,tv2,"all gamma ave");
+
+		// acquisition
+		TIMING_TIC(tv1);
+		complx *fidptr = wsp->fid + nn*sim->ntot;
+		if (wsp->curr_nsig != 0) {
+			fprintf(stderr,"Error: (i)gcompute - some FID points has already been acquired. That is not allowed.\n");
+			exit(1);
+		}
+		const double m_Ng = (double)m/(double)Ng;
+		z2 = mexp1->data;
+		z3 = mexp2->data;
+		for (i=0; i<Ud->Nblocks; i++) {
+			z1 = Ud->m[i].data;
+			assert(Ud->m[i].type == MAT_DENSE_DIAG || Ud->blk_dims[i] == 1);
+			for (ll=0; ll<Ud->blk_dims[i]; ll++) {
+				z2->re = 1.0; z2->im = 0.0;
+				*z3 = CRpow(*z1,m_Ng);
+				z1++; z2++; z3++;
+			}
+		}
+		double zzre, zzim;
+		for (ll=0; ll<wsp->Nacq; ll++) {
+			Czero(zval);
+			q = (ll*m)%Ng;
+			//printf("\tll = %d, q = %d\n",ll,q);
+			z3 = mexp1->data;
+			z5 = mexp2->data;
+			complx *zstart = tmpmx[q]->data;
+			for (row=0; row<matdim; row++) {
+				z1 = z2 = zstart + row*(matdim+1);
+				zval.re += z1->re;
+				zval.im += z1->im;
+				z4 = z3;
+				for (col=row+1; col<matdim; col++) {
+					z1++;
+					z2 += matdim;
+					z4++;
+					zzre = z3->re*z4->re + z3->im*z4->im;
+					zzim = -z3->re*z4->im + z3->im*z4->re;
+					zval.re += z1->re*zzre - z1->im*zzim;
+					zval.im += z1->re*zzim + z1->im*zzre;
+					zval.re += z2->re*zzre + z2->im*zzim;
+					zval.im += -z2->re*zzim + z2->im*zzre;
+					//if (fabs(z1->re) > TINY) {
+					//	printf("r,c = %d, %d; exp = (%g, %g), F = (%g, %g)\n",row+1,col+1,zzre,zzim,z1->re,z1->im);
+					//}
+					//if (fabs(z2->re) > TINY) {
+					//	printf("r,c = %d, %d; exp = (%g, %g), F = (%g, %g)\n",col+1,row+1,zzre,-zzim,z2->re,z2->im);
+					//}
+				}
+				zzre = z3->re; zzim = z3->im;
+				z3->re = zzre*z5->re - zzim*z5->im;
+				z3->im = zzre*z5->im + zzim*z5->re;
+
+				z3++;
+				z5++;
+			}
+			//printf("zval = (%g, %g)\n",zval.re,zval.im);
+			fidptr++;
+			//printf("\ndense gcompute: add (%f,%f) to fid (%f,%f)\n",zval.re,zval.im,fidptr->re,fidptr->im);
+			if ( fabs(wsp->acqphase) > TINY ) {
+				fidptr->re = zval.re*phre - zval.im*phim;
+				fidptr->im = zval.im*phre + zval.re*phim;
+			} else {
+				fidptr->re = zval.re;
+				fidptr->im = zval.im;
+			}
+			fidptr->re /= (double)Ng;
+			fidptr->im /= (double)Ng;
+		}
+		TIMING_TOC(tv1,tv2,"gcompute acquisition");
+
+		// free memory
+		free_complx_matrix(mexp1);
+		free_complx_matrix(mexp2);
+		for (i=0; i<Ng; i++) {
+			free_complx_matrix(tmpmx[i]);
+		}
+		free(tmpmx);
+		// this was allocated only here, important to do this first!!!
+		if (sim->EDsymmetry == 1) {
+			for (i=0; i<Ng; i++) {
+				free_complx_matrix(wsp->matrix[ini+i]);
+				wsp->matrix[ini+i] = NULL;
+			}
+		}
+		gcompute_transforms_free(sim, wsp, nn);
+	} // loop over fstart/fdetect
+	wsp->curr_nsig += wsp->Nacq - 1;
+	// free all wsp->STO
+	for (i=0; i<Ng; i++) {
+		free_blk_mat_complx(wsp->STO[ACQBLOCK_STO_INI+i]);
+		wsp->STO[ACQBLOCK_STO_INI+i] = NULL;
 	}
-	free(tmpmx);
-
+	if (T != NULL) free_blk_mat_complx(T);
 }
 
 void scan_contrib_freq_ED(mat_complx **A, int Ng, int *irow, int *icol) {
@@ -3659,23 +3782,16 @@ double * freq_from_Ud(blk_mat_complx *Ud, double period) {
  * generate frequency domain spectrum
  */
 void gcompute_spc(Sim_info *sim, Sim_wsp *wsp) {
-	int Ng, matdim, r, c, m, i, nnz, bin;
+	int Ng, matdim, r, c, m, i, nnz, bin, nn, NN, ini;
 	int *irow, *icol, *ic;
 	double binsize, diff, dtg, *freq;
 	blk_mat_complx *Ud;
 	int direction = sim->conjugate_fid ? -1 : +1;
+	complx phval = Cnull;
 
 	TIMING_INIT_VAR2(tv1,tv2);
-
-	gcompute_props(sim, wsp);
-	//blk_cm_print(wsp->STO[wsp->acqblock_sto-1],"period propator ");
-	gcompute_transforms(sim,wsp);
-
-	TIMING_TIC(tv1);
-
-	Ud = wsp->STO[wsp->acqblock_sto - 1];
-	//blk_cm_print(Ud,"diagonal period propator ");
-	freq = freq_from_Ud(Ud,sim->taur);
+	// this needs to be first as it evaluates pulse sequence
+	blk_mat_complx *T = gcompute_props(sim,wsp);
 
 	Ng = sim->ngamma;
 	matdim = sim->matdim;
@@ -3691,154 +3807,158 @@ void gcompute_spc(Sim_info *sim, Sim_wsp *wsp) {
 		fprintf(stderr,"Error: gCOMPUTE freq - some FID points has already been acquired. That is not allowed.\n");
 		exit(1);
 	}
-
-	if (sim->EDsymmetry == 1) {
-		scan_contrib_freq_ED(&wsp->matrix[ACQBLOCK_STO_INI+Ng],Ng,irow,icol);
-	    nnz = irow[matdim] - 1;
-	    //complx *qdata =  qdata_EDsym(freq, dtg, &wsp->matrix[ACQBLOCK_STO_INI+Ng], Ng, irow, icol);
-	    complx *qdata =  qdata_EDsym(freq, dtg, &wsp->matrix[ACQBLOCK_STO_INI+Ng], Ng, irow, icol,sim->fftw_plans[wsp->thread_id]);
-	    mat_complx dum;
-	    dum.irow = irow;
-	    dum.icol = icol;
-	    dum.type = MAT_SPARSE;
-	    dum.row = dum.col = matdim;
-	    ic = icol;
-	    m = 0;
-	    for (r=1; r<=matdim; r++) {
-	    	int nc = irow[r] - irow[r-1];
-	    	for (c=0; c<nc; c++) {
-				diff = freq[r-1] - freq[*ic-1];
-				for (i=0; i<Ng; i++) {
-					int idx = (i + Ng/2 + 1) % Ng;
-					complx zz1 = qdata[idx*nnz+m];
-					dum.data = &qdata[( ( ((Ng-i)%Ng) + Ng/2+1 )%Ng )*nnz];
-					complx zz2 = cm_getelem(&dum,*ic,r); // q_sr(-k)
-					double zzre = (zz1.re*zz1.re+zz1.im*zz1.im + zz1.re*zz2.re-zz1.im*zz2.im)*0.5;
-					double zzim = (zz1.re*zz2.im+zz1.im*zz2.re)*0.5;
-					//bin = (int)(1.5-(diff + sim->wr*(i-Ng/2+1))/binsize + sim->np/2);
-					bin = (int)(1.5+direction*(diff + sim->wr*(i-Ng/2+1))/binsize + sim->np/2);
-					//printf("i = %d, idx = %d, -i = %d, idx = %d : freq = %g, bin %d -> ",i,idx,(Ng-i)%Ng,( ((Ng-i)%Ng) + Ng/2+1 )%Ng,diff+sim->wr*(i-Ng/2+1),bin);
-					while (bin < 1) bin += sim->np;
-					while (bin > sim->np) bin -= sim->np;
-					assert(bin >= 1 && bin <= sim->np);
-					//wsp->fid[bin].re += zzre*cosph - zzim*sinph;
-					//wsp->fid[bin].im += zzim*cosph + zzre*sinph;
-					wsp->fid[bin].re += zzre;
-					wsp->fid[bin].im += zzim;
-					//printf(" %d : ( %g, %g ) ( %g, %g ) -> ( %g, %g )\n",bin,zz1.re,zz1.im,zz2.re,zz2.im,zzre,zzim);
-				}
-				ic++;
-				m++;
-	    	}
-	    }
-		free(qdata);
-		// END of ED symmetry calculation
-	} else {
-		//printf("Vlakno %d, velikost je %d\n",wsp->thread_id,Ng);
-	    fftw_complex *fftin1 = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Ng);
-	    fftw_complex *fftout1 = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Ng);
-	    //fftw_plan p1 = fftw_plan_dft_1d(Ng, fftin1, fftout1, FFTW_FORWARD, FFTW_ESTIMATE);
-	    fftw_complex *fftin2 = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Ng);
-	    fftw_complex *fftout2 = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Ng);
-	    //fftw_plan p2 = fftw_plan_dft_1d(Ng, fftin2, fftout2, FFTW_FORWARD, FFTW_ESTIMATE);
-	    //if (!fftin1 || !fftin2 || !fftout1 || !fftout2 || !p1 || !p2) {
-	    if (!fftin1 || !fftin2 || !fftout1 || !fftout2) {
-	    	fprintf(stderr,"Error: gCOMPUTE freq - no more memory for FFTW structures\n");
-	    	exit(1);
-	    }
-
-	    scan_contrib(&wsp->matrix[ACQBLOCK_STO_INI],Ng,irow,icol);
-
-	    for (r=1; r<=matdim; r++) {
-	    	int nc = irow[r] - irow[r-1];
-	    	for (c=0; c<nc; c++) {
-				diff = freq[r-1] - freq[*ic-1];
-				complx ph = Cexpi(-diff*dtg*1.0e-6);
-				complx phmul = Complx(1.0,0.0);
-	    		for (i=0; i<Ng; i++) {
-	    			complx zz1 = cm_getelem(wsp->matrix[ACQBLOCK_STO_INI+i],*ic,r);
-	    			complx zz2 = cm_getelem(wsp->matrix[ACQBLOCK_STO_INI+Ng+i],r,*ic);
-	    			fftin1[i][0] = zz1.re*phmul.re + zz1.im*phmul.im;
-	    			fftin1[i][1] = zz1.re*phmul.im - zz1.im*phmul.re;
-	    			fftin2[i][0] = zz2.re*phmul.re - zz2.im*phmul.im;
-	    			fftin2[i][1] = zz2.re*phmul.im + zz2.im*phmul.re;
-	    			phmul = Cmul(phmul,ph);
-	    		}
-	    		//fftw_execute(p1);
-	    		fftw_execute_dft(sim->fftw_plans[wsp->thread_id],fftin1,fftout1);
-	    		//fftw_execute(p2);
-	    		fftw_execute_dft(sim->fftw_plans[wsp->thread_id],fftin2,fftout2);
-	    		//printf("\tvlakno %d (cryst %d):  in: (%10.5f, %10.5f) (%10.5f, %10.5f)\n",wsp->thread_id,wsp->cryst_idx,fftin1[0][0],fftin1[0][1],fftin2[0][0],fftin2[0][1]);
-	    		//printf("\tvlakno %d (cryst %d): out: (%10.5f, %10.5f) (%10.5f, %10.5f)\n",wsp->thread_id,wsp->cryst_idx,fftout1[0][0],fftout1[0][1],fftout2[0][0],fftout2[0][1]);
-				for (i=0; i<Ng; i++) {
-					int idx = (i + Ng/2 + 1) % Ng;
-					double zzre = fftout1[idx][0]*fftout2[idx][0] + fftout1[idx][1]*fftout2[idx][1];
-					double zzim = fftout1[idx][0]*fftout2[idx][1] - fftout1[idx][1]*fftout2[idx][0];
-					//bin = (int)(1.5-(diff + sim->wr*(i-Ng/2+1))/binsize + sim->np/2);
-					bin = (int)(1.5+direction*(diff + sim->wr*(i-Ng/2+1))/binsize + sim->np/2);
-					//printf("i = %d, idx = %d : freq = %g, bin %d -> ",i,idx,diff+sim->wr*(i-Ng/2+1),bin);
-					while (bin < 1) bin += sim->np;
-					while (bin > sim->np) bin -= sim->np;
-					assert(bin >= 1 && bin <= sim->np);
-					//wsp->fid[bin].re += zzre*cosph - zzim*sinph;
-					//wsp->fid[bin].im += zzim*cosph + zzre*sinph;
-					wsp->fid[bin].re += zzre;
-					wsp->fid[bin].im += zzim;
-					//printf("%d : (%g, %g) (%g, %g) (%g, %g)\n",bin,fftout1[idx][0],fftout1[idx][1],fftout2[idx][0],fftout2[idx][1],zzre,zzim);
-				}
-				ic++;
-	    	}
-	    }
-	    //fftw_destroy_plan(p1);
-	    //fftw_destroy_plan(p2);
-	    fftw_free(fftin1); fftw_free(fftout1);
-	    fftw_free(fftin2); fftw_free(fftout2);
-	    // END on calculations without ED symmetry
-	}
-	wsp->curr_nsig += wsp->Nacq - 1;
 	if ( fabs(wsp->acqphase) > TINY ) {
-		complx zval;
-		zval.re = cos(wsp->acqphase*DEG2RAD)/(double)Ng;
-		zval.im = sin(wsp->acqphase*DEG2RAD)/(double)Ng;
-		cv_mulc(wsp->fid, zval);
+		phval.re = cos(wsp->acqphase*DEG2RAD)/(double)Ng;
+		phval.im = sin(wsp->acqphase*DEG2RAD)/(double)Ng;
 	} else {
-		cv_muld(wsp->fid,1.0/(double)Ng);
+		phval.re = 1.0/(double)Ng;
 	}
 
+	NN = (sim->Nfstart > sim->Nfdetect ? sim->Nfstart : sim->Nfdetect);
+	ini = ACQBLOCK_STO_INI + sim->Nfstart*Ng;
+
+	Ud = wsp->STO[wsp->acqblock_sto - 1];
+	//blk_cm_print(Ud,"diagonal period propator ");
+	freq = freq_from_Ud(Ud,sim->taur);
+
+	for (nn=0; nn<NN; nn++) {
+		gcompute_transforms(sim, wsp, T, nn);
+
+		if (sim->EDsymmetry == 1) {
+			scan_contrib_freq_ED(&wsp->matrix[ini+Ng],Ng,irow,icol);
+			nnz = irow[matdim] - 1;
+			complx *qdata =  qdata_EDsym(freq, dtg, &wsp->matrix[ini+Ng], Ng, irow, icol,sim->fftw_plans[wsp->thread_id]);
+			mat_complx dum;
+			dum.irow = irow;
+			dum.icol = icol;
+			dum.type = MAT_SPARSE;
+			dum.row = dum.col = matdim;
+			ic = icol;
+			m = 0;
+			for (r=1; r<=matdim; r++) {
+				int nc = irow[r] - irow[r-1];
+				for (c=0; c<nc; c++) {
+					diff = freq[r-1] - freq[*ic-1];
+					for (i=0; i<Ng; i++) {
+						int idx = (i + Ng/2 + 1) % Ng;
+						complx zz1 = qdata[idx*nnz+m];
+						dum.data = &qdata[( ( ((Ng-i)%Ng) + Ng/2+1 )%Ng )*nnz];
+						complx zz2 = cm_getelem(&dum,*ic,r); // q_sr(-k)
+						double zzre = (zz1.re*zz1.re+zz1.im*zz1.im + zz1.re*zz2.re-zz1.im*zz2.im)*0.5;
+						double zzim = (zz1.re*zz2.im+zz1.im*zz2.re)*0.5;
+						//bin = (int)(1.5-(diff + sim->wr*(i-Ng/2+1))/binsize + sim->np/2);
+						bin = (int)(1.5+direction*(diff + sim->wr*(i-Ng/2+1))/binsize + sim->np/2);
+						//printf("i = %d, idx = %d, -i = %d, idx = %d : freq = %g, bin %d -> ",i,idx,(Ng-i)%Ng,( ((Ng-i)%Ng) + Ng/2+1 )%Ng,diff+sim->wr*(i-Ng/2+1),bin);
+						while (bin < 1) bin += sim->np;
+						while (bin > sim->np) bin -= sim->np;
+						assert(bin >= 1 && bin <= sim->np);
+						bin += sim->ntot*nn; // to correct for multiple fstart/fdetect
+						wsp->fid[bin].re += zzre;
+						wsp->fid[bin].im += zzim;
+						//printf(" %d : ( %g, %g ) ( %g, %g ) -> ( %g, %g )\n",bin,zz1.re,zz1.im,zz2.re,zz2.im,zzre,zzim);
+					}
+					ic++;
+					m++;
+				}
+			}
+			free(qdata);
+			// END of ED symmetry calculation
+		} else {
+			fftw_complex *fftin1 = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Ng);
+			fftw_complex *fftout1 = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Ng);
+			fftw_complex *fftin2 = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Ng);
+			fftw_complex *fftout2 = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Ng);
+			if (!fftin1 || !fftin2 || !fftout1 || !fftout2) {
+				fprintf(stderr,"Error: gCOMPUTE freq - no more memory for FFTW structures\n");
+				exit(1);
+			}
+
+			scan_contrib(&wsp->matrix[ini],Ng,irow,icol);
+
+			for (r=1; r<=matdim; r++) {
+				int nc = irow[r] - irow[r-1];
+				for (c=0; c<nc; c++) {
+					diff = freq[r-1] - freq[*ic-1];
+					complx ph = Cexpi(-diff*dtg*1.0e-6);
+					complx phmul = Complx(1.0,0.0);
+					for (i=0; i<Ng; i++) {
+						complx zz1 = cm_getelem(wsp->matrix[ini+i],*ic,r);
+						complx zz2 = cm_getelem(wsp->matrix[ini+Ng+i],r,*ic);
+						fftin1[i][0] = zz1.re*phmul.re + zz1.im*phmul.im;
+						fftin1[i][1] = zz1.re*phmul.im - zz1.im*phmul.re;
+						fftin2[i][0] = zz2.re*phmul.re - zz2.im*phmul.im;
+						fftin2[i][1] = zz2.re*phmul.im + zz2.im*phmul.re;
+						phmul = Cmul(phmul,ph);
+					}
+					fftw_execute_dft(sim->fftw_plans[wsp->thread_id],fftin1,fftout1);
+					fftw_execute_dft(sim->fftw_plans[wsp->thread_id],fftin2,fftout2);
+					//printf("\tvlakno %d (cryst %d):  in: (%10.5f, %10.5f) (%10.5f, %10.5f)\n",wsp->thread_id,wsp->cryst_idx,fftin1[0][0],fftin1[0][1],fftin2[0][0],fftin2[0][1]);
+					//printf("\tvlakno %d (cryst %d): out: (%10.5f, %10.5f) (%10.5f, %10.5f)\n",wsp->thread_id,wsp->cryst_idx,fftout1[0][0],fftout1[0][1],fftout2[0][0],fftout2[0][1]);
+					for (i=0; i<Ng; i++) {
+						int idx = (i + Ng/2 + 1) % Ng;
+						double zzre = fftout1[idx][0]*fftout2[idx][0] + fftout1[idx][1]*fftout2[idx][1];
+						double zzim = fftout1[idx][0]*fftout2[idx][1] - fftout1[idx][1]*fftout2[idx][0];
+						//bin = (int)(1.5-(diff + sim->wr*(i-Ng/2+1))/binsize + sim->np/2);
+						bin = (int)(1.5+direction*(diff + sim->wr*(i-Ng/2+1))/binsize + sim->np/2);
+						//printf("i = %d, idx = %d : freq = %g, bin %d -> ",i,idx,diff+sim->wr*(i-Ng/2+1),bin);
+						while (bin < 1) bin += sim->np;
+						while (bin > sim->np) bin -= sim->np;
+						assert(bin >= 1 && bin <= sim->np);
+						bin += sim->ntot*nn;
+						wsp->fid[bin].re += zzre;
+						wsp->fid[bin].im += zzim;
+						//printf("%d : (%g, %g) (%g, %g) (%g, %g)\n",bin,fftout1[idx][0],fftout1[idx][1],fftout2[idx][0],fftout2[idx][1],zzre,zzim);
+					}
+					ic++;
+				}
+			}
+			fftw_free(fftin1); fftw_free(fftout1);
+			fftw_free(fftin2); fftw_free(fftout2);
+			// END on calculations without ED symmetry
+		}
+
+		if ( fabs(wsp->acqphase) > TINY ) {
+			//cv_mulc(wsp->fid, zval);
+			cblas_zscal(sim->np,&phval,&(wsp->fid[nn*sim->ntot+1]),1);
+		} else {
+			//cv_muld(wsp->fid,1.0/(double)Ng);
+			cblas_zdscal(sim->np,phval.re,&(wsp->fid[nn*sim->ntot+1]),1);
+		}
+
+		gcompute_transforms_free(sim,wsp,nn);
+	} // loop over multiple fstart/fdetect
+
+	wsp->curr_nsig += wsp->Nacq - 1;
 	// freeing memory
 	free(irow);
 	free(icol);
 	free(freq);
-	free_blk_mat_complx(wsp->STO[wsp->acqblock_sto-1]);
-	wsp->STO[wsp->acqblock_sto-1] = NULL;
-	for (i=ACQBLOCK_STO_INI; i<wsp->acqblock_sto; i++) {
-		if (wsp->matrix[i] != NULL) {
-			free_complx_matrix(wsp->matrix[i]);
-			wsp->matrix[i] = NULL;
-		}
-		free_complx_matrix(wsp->matrix[i+Ng]);
-		wsp->matrix[i+Ng] = NULL;
+	// free all wsp->STO
+	for (i=0; i<Ng; i++) {
+		free_blk_mat_complx(wsp->STO[ACQBLOCK_STO_INI+i]);
+		wsp->STO[ACQBLOCK_STO_INI+i] = NULL;
 	}
-
-	TIMING_TOC(tv1,tv2,"gCOMPUTE spectrum generation in TOTAL");
-
+	if (T != NULL) free_blk_mat_complx(T);
 }
 
 /*****
  * generate frequency domain data for ASG interpolation
  */
 void gcompute_ASGdata(Sim_info *sim, Sim_wsp *wsp) {
-	int Ng, matdim, r, c, m, i, nnz;
+	int Ng, matdim, r, c, m, i, nnz, ini;
 	int *irow, *icol, *ic, Udiag;
 	double diff, dtg, *freq;
-	blk_mat_complx *Ud;
+	blk_mat_complx *Ud, *T;
 
 	TIMING_INIT_VAR2(tv1,tv2);
 
-	gcompute_props(sim, wsp);
+	T = gcompute_props(sim, wsp); // Ud gets diagonalized inside this
 	Ud = wsp->STO[wsp->acqblock_sto - 1];
-	Udiag = blk_cm_isdiag(Ud);
-	gcompute_transforms(sim,wsp); // Ud gets diagonalized inside this
+	if (T == NULL)
+		Udiag = 1;
+	else
+		Udiag = 0;
+	gcompute_transforms(sim,wsp, T, 0); // multiple fstart/fdetect not allowed
 
 	TIMING_TIC(tv1);
 
@@ -3847,6 +3967,7 @@ void gcompute_ASGdata(Sim_info *sim, Sim_wsp *wsp) {
 	Ng = sim->ngamma;
 	matdim = sim->matdim;
 	dtg = sim->taur/(double)Ng;
+	ini = ACQBLOCK_STO_INI + sim->Nfstart*Ng;
 
 	if (wsp->FWTASG_irow == NULL) {
 		wsp->FWTASG_irow = (int*)malloc((matdim+1)*sizeof(int));
@@ -3857,9 +3978,9 @@ void gcompute_ASGdata(Sim_info *sim, Sim_wsp *wsp) {
 	    }
 	    if (Udiag) {
 		    if (sim->EDsymmetry == 1) {
-		    	scan_contrib_freq_ED(&wsp->matrix[ACQBLOCK_STO_INI+Ng],Ng,wsp->FWTASG_irow,wsp->FWTASG_icol);
+		    	scan_contrib_freq_ED(&wsp->matrix[ini+Ng],Ng,wsp->FWTASG_irow,wsp->FWTASG_icol);
 		    } else {
-			    scan_contrib(&wsp->matrix[ACQBLOCK_STO_INI],Ng,wsp->FWTASG_irow,wsp->FWTASG_icol);
+			    scan_contrib(&wsp->matrix[ini],Ng,wsp->FWTASG_irow,wsp->FWTASG_icol);
 		    }
 		    nnz = wsp->FWTASG_irow[matdim] - 1;
 	    	icol = (int*)realloc(wsp->FWTASG_icol, nnz*sizeof(int));
@@ -3876,9 +3997,9 @@ void gcompute_ASGdata(Sim_info *sim, Sim_wsp *wsp) {
 	// repeat scan for every crystallite if Ud was diagonalized and re-sorted
 	if (!Udiag) {
 	    if (sim->EDsymmetry == 1) {
-	    	scan_contrib_freq_ED(&wsp->matrix[ACQBLOCK_STO_INI+Ng],Ng,irow,icol);
+	    	scan_contrib_freq_ED(&wsp->matrix[ini+Ng],Ng,irow,icol);
 	    } else {
-		    scan_contrib(&wsp->matrix[ACQBLOCK_STO_INI],Ng,irow,icol);
+		    scan_contrib(&wsp->matrix[ini],Ng,irow,icol);
 	    }
 	}
 	nnz = irow[matdim] - 1;
@@ -3921,8 +4042,7 @@ void gcompute_ASGdata(Sim_info *sim, Sim_wsp *wsp) {
 	*/
 
 	if (sim->EDsymmetry == 1) {
-	    //complx *qdata =  qdata_EDsym(freq, dtg, &wsp->matrix[ACQBLOCK_STO_INI+Ng], Ng, irow, icol);
-		complx *qdata =  qdata_EDsym(freq, dtg, &wsp->matrix[ACQBLOCK_STO_INI+Ng], Ng, irow, icol,sim->fftw_plans[wsp->thread_id]);
+		complx *qdata =  qdata_EDsym(freq, dtg, &wsp->matrix[ini+Ng], Ng, irow, icol,sim->fftw_plans[wsp->thread_id]);
 		mat_complx dum;
 	    dum.irow = irow;
 	    dum.icol = icol;
@@ -3956,11 +4076,8 @@ void gcompute_ASGdata(Sim_info *sim, Sim_wsp *wsp) {
 	} else {
 	    fftw_complex *fftin1 = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Ng);
 	    fftw_complex *fftout1 = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Ng);
-	    //fftw_plan p1 = fftw_plan_dft_1d(Ng, fftin1, fftout1, FFTW_FORWARD, FFTW_ESTIMATE);
 	    fftw_complex *fftin2 = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Ng);
 	    fftw_complex *fftout2 = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Ng);
-	    //fftw_plan p2 = fftw_plan_dft_1d(Ng, fftin2, fftout2, FFTW_FORWARD, FFTW_ESTIMATE);
-	    //if (!fftin1 || !fftin2 || !fftout1 || !fftout2 || !p1 || !p2) {
 	    if (!fftin1 || !fftin2 || !fftout1 || !fftout2) {
 	    	fprintf(stderr,"Error: gCOMPUTE freq - no more memory for FFTW structures\n");
 	    	exit(1);
@@ -3976,8 +4093,8 @@ void gcompute_ASGdata(Sim_info *sim, Sim_wsp *wsp) {
 				complx ph = Cexpi(-diff*dtg*1.0e-6);
 				complx phmul = Complx(1.0,0.0);
 	    		for (i=0; i<Ng; i++) {
-	    			complx zz1 = cm_getelem(wsp->matrix[ACQBLOCK_STO_INI+i],*ic,r);
-	    			complx zz2 = cm_getelem(wsp->matrix[ACQBLOCK_STO_INI+Ng+i],r,*ic);
+	    			complx zz1 = cm_getelem(wsp->matrix[ini+i],*ic,r);
+	    			complx zz2 = cm_getelem(wsp->matrix[ini+Ng+i],r,*ic);
 	    			fftin1[i][0] = zz1.re*phmul.re + zz1.im*phmul.im;
 	    			fftin1[i][1] = zz1.re*phmul.im - zz1.im*phmul.re;
 	    			fftin2[i][0] = zz2.re*phmul.re - zz2.im*phmul.im;
@@ -3999,8 +4116,6 @@ void gcompute_ASGdata(Sim_info *sim, Sim_wsp *wsp) {
 				m++;
 	    	}
 	    }
-	    //fftw_destroy_plan(p1);
-	    //fftw_destroy_plan(p2);
 	    fftw_free(fftin1); fftw_free(fftout1);
 	    fftw_free(fftin2); fftw_free(fftout2);
 	    // END on calculations without ED symmetry
@@ -4008,16 +4123,13 @@ void gcompute_ASGdata(Sim_info *sim, Sim_wsp *wsp) {
 
 	// freeing memory
 	free(freq);
-	free_blk_mat_complx(wsp->STO[wsp->acqblock_sto-1]);
-	wsp->STO[wsp->acqblock_sto-1] = NULL;
-	for (i=ACQBLOCK_STO_INI; i<wsp->acqblock_sto; i++) {
-		if (wsp->matrix[i] != NULL) {
-			free_complx_matrix(wsp->matrix[i]);
-			wsp->matrix[i] = NULL;
-		}
-		free_complx_matrix(wsp->matrix[i+Ng]);
-		wsp->matrix[i+Ng] = NULL;
+	gcompute_transforms_free(sim,wsp,0);
+	// free all wsp->STO
+	for (i=0; i<Ng; i++) {
+		free_blk_mat_complx(wsp->STO[ACQBLOCK_STO_INI+i]);
+		wsp->STO[ACQBLOCK_STO_INI+i] = NULL;
 	}
+	if (T != NULL) free_blk_mat_complx(T);
 
 	TIMING_TOC(tv1,tv2,"gCOMPUTE ASG data generation in TOTAL");
 }
@@ -4026,22 +4138,26 @@ void gcompute_ASGdata(Sim_info *sim, Sim_wsp *wsp) {
  * generate frequency domain data for ASG interpolation
  */
 void gcompute_FWTdata(Sim_info *sim, Sim_wsp *wsp) {
-	int Ng, matdim, r, c, m, i, Udiag, nnz;
+	int Ng, matdim, r, c, m, i, Udiag, nnz, ini;
 	int *ic, *icol, *irow;
 	complx *z1, *z2, *FWT_frs;
-	blk_mat_complx *Ud;
+	blk_mat_complx *Ud, *T;
 
 	TIMING_INIT_VAR2(tv1,tv2);
 
-	gcompute_props(sim, wsp);
+	T = gcompute_props(sim, wsp);  // Ud gets diagonalized inside this
 	Ud = wsp->STO[wsp->acqblock_sto - 1];
-	Udiag = blk_cm_isdiag(Ud);
-	gcompute_transforms(sim,wsp);
+	if (T == NULL)
+		Udiag = 1;
+	else
+		Udiag = 0;
+	gcompute_transforms(sim,wsp, T, 0); // multiple fstart/fdetect not allowed
 
 	TIMING_TIC(tv1);
 
 	Ng = sim->ngamma;
 	matdim = sim->matdim;
+	ini = ACQBLOCK_STO_INI + sim->Nfstart*Ng;
 
 	if (wsp->FWTASG_irow == NULL) {
         wsp->FWTASG_irow = (int*)malloc((matdim+1)*sizeof(int));
@@ -4052,9 +4168,9 @@ void gcompute_FWTdata(Sim_info *sim, Sim_wsp *wsp) {
     	}
     	if (Udiag) {
     		if (sim->EDsymmetry == 1) {
-    			scan_contrib_freq_ED(&wsp->matrix[ACQBLOCK_STO_INI+Ng],Ng,wsp->FWTASG_irow,wsp->FWTASG_icol);
+    			scan_contrib_freq_ED(&wsp->matrix[ini+Ng],Ng,wsp->FWTASG_irow,wsp->FWTASG_icol);
     		} else {
-    			scan_contrib(&wsp->matrix[ACQBLOCK_STO_INI],Ng,wsp->FWTASG_irow,wsp->FWTASG_icol);
+    			scan_contrib(&wsp->matrix[ini],Ng,wsp->FWTASG_irow,wsp->FWTASG_icol);
     		}
     		nnz = wsp->FWTASG_irow[matdim] - 1;
     		icol = (int*)realloc(wsp->FWTASG_icol, nnz*sizeof(int));
@@ -4084,9 +4200,9 @@ void gcompute_FWTdata(Sim_info *sim, Sim_wsp *wsp) {
 	// repeat scan every crystallite when Ud was diagonalized and re-shuffled
 	if (!Udiag) {
 		if (sim->EDsymmetry == 1) {
-			scan_contrib_freq_ED(&wsp->matrix[ACQBLOCK_STO_INI+Ng],Ng,wsp->FWTASG_irow,wsp->FWTASG_icol);
+			scan_contrib_freq_ED(&wsp->matrix[ini+Ng],Ng,wsp->FWTASG_irow,wsp->FWTASG_icol);
 		} else {
-			scan_contrib(&wsp->matrix[ACQBLOCK_STO_INI],Ng,wsp->FWTASG_irow,wsp->FWTASG_icol);
+			scan_contrib(&wsp->matrix[ini],Ng,wsp->FWTASG_irow,wsp->FWTASG_icol);
 		}
 		nnz = wsp->FWTASG_irow[matdim] - 1;
 		// allocate global irow/icol
@@ -4156,10 +4272,8 @@ void gcompute_FWTdata(Sim_info *sim, Sim_wsp *wsp) {
 			z2 += LEN(sim->crdata);
 		}
 	}
-	free_blk_mat_complx(wsp->STO[wsp->acqblock_sto-1]);
-	wsp->STO[wsp->acqblock_sto-1] = NULL;
-
-
+	//free_blk_mat_complx(wsp->STO[wsp->acqblock_sto-1]);
+	//wsp->STO[wsp->acqblock_sto-1] = NULL;
 
 	if (sim->EDsymmetry == 1) {
 	    ic = icol;
@@ -4169,7 +4283,7 @@ void gcompute_FWTdata(Sim_info *sim, Sim_wsp *wsp) {
 	    	int nc = irow[r] - irow[r-1];
 	    	for (c=0; c<nc; c++) {
 				for (i=0; i<Ng; i++) {
-					*z2 = cm_getelem(wsp->matrix[ACQBLOCK_STO_INI+Ng+i],r,*ic); // q_rs(k)
+					*z2 = cm_getelem(wsp->matrix[ini+Ng+i],r,*ic); // q_rs(k)
 					//z2 += LEN(sim->crdata);
 					z2++;
 				}
@@ -4187,28 +4301,24 @@ void gcompute_FWTdata(Sim_info *sim, Sim_wsp *wsp) {
 	    	int nc = irow[r] - irow[r-1];
 	    	for (c=0; c<nc; c++) {
 	    		for (i=0; i<Ng; i++) {
-	    			*z1 = cm_getelem(wsp->matrix[ACQBLOCK_STO_INI+i],*ic,r);
-	    			*z2 = cm_getelem(wsp->matrix[ACQBLOCK_STO_INI+Ng+i],r,*ic);
-	    			//z1 += 2*LEN(sim->crdata);
-	    			//z2 += 2*LEN(sim->crdata);
+	    			*z1 = cm_getelem(wsp->matrix[ini+i],*ic,r);
+	    			*z2 = cm_getelem(wsp->matrix[ini+Ng+i],r,*ic);
 	    			z1++; z2++;
 	    		}
 				ic++;
-				//m++;
 	    	}
 	    }
 	    // END on calculations without ED symmetry
 	}
 
 	// freeing memory
-	for (i=ACQBLOCK_STO_INI; i<wsp->acqblock_sto; i++) {
-		if (wsp->matrix[i] != NULL) {
-			free_complx_matrix(wsp->matrix[i]);
-			wsp->matrix[i] = NULL;
-		}
-		free_complx_matrix(wsp->matrix[i+Ng]);
-		wsp->matrix[i+Ng] = NULL;
+	gcompute_transforms_free(sim, wsp, 0);
+	// free all wsp->STO
+	for (i=0; i<Ng; i++) {
+		free_blk_mat_complx(wsp->STO[ACQBLOCK_STO_INI+i]);
+		wsp->STO[ACQBLOCK_STO_INI+i] = NULL;
 	}
+	if (T != NULL) free_blk_mat_complx(T);
 
 	TIMING_TOC(tv1,tv2,"gCOMPUTE FWT data generation in TOTAL");
 }
@@ -4949,6 +5059,9 @@ double direct_props(Tcl_Interp *interp,Tcl_Obj *obj,Sim_info *sim,Sim_wsp *wsp)
 	int i, k, m;
 	blk_mat_complx *T, *Ud;
 
+	// this is called only from interpolation functions where multiple fstart/fdetect are not allowed
+	assert(sim->Nfstart == 1 && sim->Nfdetect == 1);
+
 	// take care of pending propagator and initial density matrix
 	_evolve_with_prop(sim,wsp);
 	_reset_prop(sim,wsp);
@@ -5023,20 +5136,23 @@ mat_complx *direct_transforms(Sim_info *sim, Sim_wsp *wsp)
 	mat_complx *det, *rho;
 	blk_mat_complx *Ud, *T, *TT;
 
+	// this is called only from interpolation functions where multiple fstart/fdetect are not allowed
+	assert(sim->Nfstart == 1 && sim->Nfdetect == 1);
+
 	// prepare detection operator
 	if (sim->acq_adjoint) {
-		if (wsp->fdetect != sim->fdetect)
-			cm_adjointi(wsp->fdetect);
+		if (wsp->fdetect[0] != sim->fdetect[0])
+			cm_adjointi(wsp->fdetect[0]);
 		else
-			wsp->fdetect = cm_adjoint(sim->fdetect);
+			wsp->fdetect[0] = cm_adjoint(sim->fdetect[0]);
 	}
 
 	k = ACQBLOCK_STO_INI;       // first propagator
 	m = wsp->acqblock_sto - 1;  // final propagator
 	// prepare transformed matrices
 	Ud = wsp->STO[m];
-	det = wsp->matrix[k] = cm_change_basis_2(wsp->fdetect,Ud->basis,sim);
-	rho = cm_change_basis_2(wsp->sigma,Ud->basis,sim);
+	det = wsp->matrix[k] = cm_change_basis_2(wsp->fdetect[0],Ud->basis,sim);
+	rho = cm_change_basis_2(wsp->sigma[0],Ud->basis,sim);
 	if (blk_cm_isdiag(Ud)) {
 		T = NULL;
 		for (i=k; i<m; i++) {

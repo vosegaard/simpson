@@ -19,7 +19,7 @@ extern OCoptPars OCpar;
 
 
 void store_OCprop(Sim_wsp *wsp);
-void store_OCdens(Sim_wsp *wsp);
+void store_OCdens(Sim_info *sim, Sim_wsp *wsp);
 void set_OCmx_code(Sim_wsp *wsp, char *c);
 void incr_OCmx_pos(Sim_wsp *wsp);
 void _filterOC(Sim_info *sim, Sim_wsp *wsp,int num);

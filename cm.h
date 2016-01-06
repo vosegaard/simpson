@@ -22,6 +22,7 @@ void cv_multod(complx *v1, complx *v2, double d);
 void cv_mulc(complx *vec, complx z);
 void cv_multoc(complx *v1, complx *v2, complx z);
 void cv_conj(complx *vec);
+void cv_conj2(complx *vec, int len);
 double cv_asum(complx *vec);
 void cv_matmulto(complx *vec, mat_complx *A);
 void cv_matmul(complx *res, mat_complx *A, complx *vec);

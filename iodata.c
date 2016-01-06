@@ -267,6 +267,8 @@ void FD_write(char* fname,FD* fd,int format,int prec)
     fprintf(fp,"SW1=%.12g\n",fd->sw1);  
   if (fd->ref1 != 0.0)
     fprintf(fp,"REF1=%.12g\n",fd->ref1);  
+  if (fd->nelem != 1)
+    fprintf(fp,"NELEM=%d\n",fd->nelem);
   if (fd->type == FD_TYPE_FID)
     fprintf(fp,"TYPE=FID\n");
   else
@@ -279,7 +281,7 @@ void FD_write(char* fname,FD* fd,int format,int prec)
       fprintf(fp,"PREC=DOUBLE\n");    
   }
   fprintf(fp,"DATA\n");
-  ntot=fd->np*(fd->ni > 1 ? fd->ni : 1);
+  ntot=fd->np*(fd->ni > 1 ? fd->ni : 1)*fd->nelem;
 
   if (fd->format == FD_FORMAT_BINARY) {    
     if (fd->prec == FD_PREC_SINGLE) {
@@ -320,7 +322,7 @@ void FD_write(char* fname,FD* fd,int format,int prec)
 int FD_alloc1ddata(FD* fd)
 {
   int ntot;
-  ntot=fd->np*(fd->ni > 1 ? fd->ni : 1);
+  ntot=fd->np*(fd->ni > 1 ? fd->ni : 1)*fd->nelem;
   fd->data=(complx*)malloc(sizeof(complx)*(ntot+1));
   if (!fd->data) {
     fprintf(stderr,"FD_alloc1ddata: unable to allocate 2x%d doubles\n",ntot);
@@ -339,6 +341,7 @@ void FD_defvalues(FD* fd)
   fd->data=NULL;
   fd->np=0;
   fd->ni=0;
+  fd->nelem = 1;
   fd->type=FD_TYPE_FID;
   fd->format=FD_FORMAT_TEXT;
   fd->prec=FD_PREC_SINGLE;
@@ -386,7 +389,7 @@ void FD_zero(FD* fd)
     fprintf(stderr,"FD_zero: FD structure contained no data !\n");
     exit(1);
   }
-  memset(fd->data,0,sizeof(complx)*(fd->np*(fd->ni > 1 ? fd->ni : 1)+1));
+  memset(fd->data,0,sizeof(complx)*(fd->np*(fd->ni > 1 ? fd->ni : 1)*fd->nelem+1));
 }
 
 
@@ -457,16 +460,22 @@ FD* FD_read(char* fname)
        if (!strcmp(com,"NP")) {
           fd->np=atoi(val);
           if (fd->np <= 0) {
-            fprintf(stderr,"FD_read: number of points must be larger than zero\n");
+            fprintf(stderr,"FD_read: number of points NP must be larger than zero\n");
             exit(1);
           }
           got_np=1;
        } else if (!strcmp(com,"NI")) {
           fd->ni=atoi(val);
           if (fd->ni <= 0) {
-            fprintf(stderr,"FD_read: number of points must be larger than zero\n");
+            fprintf(stderr,"FD_read: number of points NI must be larger than zero\n");
             exit(1);
           }
+       } else if (!strcmp(com,"NELEM")) {
+           fd->nelem=atoi(val);
+           if (fd->nelem <= 0) {
+             fprintf(stderr,"FD_read: number of elements NELEM must be larger than zero\n");
+             exit(1);
+           }
        } else if (!strcmp(com,"SW")) {
           if (sscanf(val,"%lg",&fd->sw) != 1) {
             fprintf(stderr,"FD_read: unable to convert '%s' to double in file '%s'\n",val,fname);
@@ -527,7 +536,7 @@ FD* FD_read(char* fname)
          exit(1);
        }
        FD_alloc1ddata(fd);
-       ntot=fd->np*(fd->ni > 1 ? fd->ni : 1);
+       ntot=fd->np*(fd->ni > 1 ? fd->ni : 1)*fd->nelem;
 
        if (fd->format == FD_FORMAT_TEXT) {
          for (i=1;i<=ntot;i++) {
@@ -669,6 +678,12 @@ FD* FD_readstr(char* d)
             fprintf(stderr,"FD_readstr: number of points must be larger than zero\n");
             exit(1);
           }
+       } else if (!strcmp(com,"NELEM")) {
+          fd->nelem=atoi(val);
+          if (fd->nelem <= 0) {
+            fprintf(stderr,"FD_readstr: number of elements NELEM must be larger than zero\n");
+            exit(1);
+          }
        } else if (!strcmp(com,"SW")) {
           if (sscanf(val,"%lg",&fd->sw) != 1) {
             fprintf(stderr,"FD_readstr: unable to convert '%s' to double\n",val);
@@ -724,7 +739,7 @@ FD* FD_readstr(char* d)
          exit(1);
        }
        FD_alloc1ddata(fd);
-       ntot=fd->np*(fd->ni > 1 ? fd->ni : 1);
+       ntot=fd->np*(fd->ni > 1 ? fd->ni : 1)*fd->nelem;
 
        if (fd->format == FD_FORMAT_TEXT) {
          for (i=1;i<=ntot;i++) {
@@ -801,6 +816,7 @@ FD* FD_dup(FD* fd)
   to=FD_alloc();
   to->np=fd->np;
   to->ni=fd->ni;
+  to->nelem=fd->nelem;
   to->type=fd->type;
   to->format=fd->format;
   to->prec=fd->prec;
@@ -809,21 +825,22 @@ FD* FD_dup(FD* fd)
   to->sw=fd->sw;
   to->sw1=fd->sw1;
   FD_alloc1ddata(to);
-  memcpy(to->data,fd->data,sizeof(complx)*(to->np*(to->ni > 1 ? to->ni : 1)+1));
+  memcpy(to->data,fd->data,sizeof(complx)*(to->np*(to->ni > 1 ? to->ni : 1)*to->nelem+1));
   return to;
 }
 
-FD* FD_data2fd(char* file,complx* data,int np,int ni,double sw,double sw1)
+FD* FD_data2fd(char* file,complx* data,int np,int ni,double sw,double sw1, int nelem)
 {
   FD* fd;
 
   fd=FD_alloc();
   fd->np=np;
   fd->ni=ni;
+  fd->nelem=nelem;
   fd->sw=sw;
   fd->sw1=sw1;
   FD_alloc1ddata(fd);
-  memcpy(fd->data,data,sizeof(complx)*(fd->np*(fd->ni > 1 ? fd->ni : 1)+1));
+  memcpy(fd->data,data,sizeof(complx)*(fd->np*(fd->ni > 1 ? fd->ni : 1)*fd->nelem+1));
   return fd;
 }
 
@@ -913,7 +930,11 @@ void FD_write_rmn(char *fname, FD* fd)
   double dd;
   float df;
   FILE* fp;
-  
+
+  if (fd->nelem != 1) {
+	  fprintf(stderr,"Error: FD_write_rmn detected multiple elements in fid/spc - feature not supported here\n");
+	  exit(1);
+  }
   fp=fopen(fname,"w");
   if (!fp) {
     fprintf(stderr,"FD_write_rmn: unable to create file '%s'\n",fname);
@@ -1381,7 +1402,7 @@ float getvnmrval(FILE *f, char *par)
 
 void FD_read_vnmr(char *fname, int swap)
 {
-  
+	printf("Error: FD_read_vnmr not implemented, nothing done.\n");
 }
 
 
@@ -1396,6 +1417,11 @@ void FD_write_nmrpipe(char* fname,FD* fd, int phsens)
   double ref, ref1;
   char *aq2d;
   char *yMODE;
+
+  if (fd->nelem != 1) {
+	  fprintf(stderr,"Error: FD_write_nmrpipe detected multiple fid/spc elements - feature not supported here\n");
+	  exit(1);
+  }
 
 #ifdef REVERSEBYTES
   char *swap = "-no";
@@ -1541,6 +1567,11 @@ void FD_write_raw_bin(char* fname,FD* fd)
   int i,ni,j, no, ii, jj;
   FILE* fp;
   float f;
+
+  if (fd->nelem != 1) {
+	  fprintf(stderr,"Error: FD_write_raw_bin detected multiple fid/spc elements - feature not supported here\n");
+	  exit(1);
+  }
 
   if ((fp=fopen(fname, "w")) == NULL) {
     fprintf(stderr,"FD_write_raw_bin: unable to create file %s\n",fname);

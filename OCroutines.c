@@ -127,17 +127,18 @@ void store_OCprop(Sim_wsp *wsp)
 /****
  * store current density matrix to OCpar->dens[i]
  ****/
-void store_OCdens(Sim_wsp *wsp)
+void store_OCdens(Sim_info *sim, Sim_wsp *wsp)
 {
   int i = wsp->OC_mxpos;
-  
-  /* debug print */
-   /*  printf("Storing OC matrix density to slot %d\n",i); */
-   
-  if (wsp->OC_dens[i] == NULL)
-     wsp->OC_dens[i] = cm_dup(wsp->sigma);
-  else
-	 cm_copy(wsp->OC_dens[i],wsp->sigma);
+  int ii;
+
+  /*  printf("Storing OC matrix density to slot %d\n",i); */
+  for (ii=0; ii<sim->Nfstart; ii++) {
+	  if (wsp->OC_dens[i+MAXOCPROPS*ii] == NULL)
+		  wsp->OC_dens[i+MAXOCPROPS*ii] = cm_dup(wsp->sigma[ii]);
+	  else
+		  cm_copy(wsp->OC_dens[i+MAXOCPROPS*ii],wsp->sigma[ii]);
+  }
 
 }
 
@@ -284,6 +285,7 @@ void test_pulseq_for_acqOC_prop(Tcl_Interp *interp)
  ****/
 void _filterOC(Sim_info *sim, Sim_wsp *wsp, int num)
 {
+  int ii;
   mat_complx *mask;
 
   mask = wsp->matrix[num];
@@ -302,15 +304,16 @@ void _filterOC(Sim_info *sim, Sim_wsp *wsp, int num)
      store_OCprop(wsp);
      _evolve_with_prop(sim,wsp);
      _reset_prop(sim,wsp);
-     store_OCdens(wsp);
+     store_OCdens(sim,wsp);
      set_OCmx_code(wsp,"P");
   }
   wsp->cannotbestored=1;
-  cm_filter(wsp->sigma,mask);
+  for (ii=0; ii<sim->Nfstart; ii++)
+	  cm_filter(wsp->sigma[ii],mask);
 
   incr_OCmx_pos(wsp);
   store_OCfilter(wsp,num);
-  store_OCdens(wsp);
+  store_OCdens(sim,wsp);
   set_OCmx_code(wsp,"F");
 }
 
@@ -481,7 +484,7 @@ void _pulse_shapedOC_2(Sim_info *sim, Sim_wsp *wsp, int Nelem, int *OCchanmap, i
 		/* there is some pending propagator, store it but make no gradient */
 		incr_OCmx_pos(wsp);
 		store_OCprop(wsp);
-		store_OCdens(wsp); /* store sigma from previous step */
+		store_OCdens(sim,wsp); /* store sigma from previous step */
 		_evolve_with_prop(sim,wsp); /* get sigma ready for next store */
 		_reset_prop(sim,wsp);
 	}
@@ -689,7 +692,7 @@ void _pulse_shapedOC_2(Sim_info *sim, Sim_wsp *wsp, int Nelem, int *OCchanmap, i
 			wsp->t += dt_us;
 		} /* end for i over maxdt steps inside pulse step */
 		store_OCprop(wsp);
-		store_OCdens(wsp); /* sigma of previous step */
+		store_OCdens(sim,wsp); /* sigma of previous step */
 		_evolve_with_prop(sim,wsp); /* get sigma ready for the next step */
 		_reset_prop(sim,wsp);
 	} /* end for j over Nelem */
@@ -717,7 +720,7 @@ void _pulse_shapedOC_2(Sim_info *sim, Sim_wsp *wsp, int Nelem, int *OCchanmap, i
       incr_OCmx_pos(wsp);
       store_OCprop(wsp);
       _evolve_with_prop(sim,wsp);
-      store_OCdens(wsp);
+      store_OCdens(sim,wsp);
       _reset_prop(sim,wsp);
       set_OCmx_code(wsp,"P");
    }
@@ -736,7 +739,7 @@ void _pulse_shapedOC_2(Sim_info *sim, Sim_wsp *wsp, int Nelem, int *OCchanmap, i
       _pulse(sim,wsp,steptime);
       store_OCprop(wsp);
       _evolve_with_prop(sim,wsp);
-      store_OCdens(wsp);
+      store_OCdens(sim,wsp);
       _reset_prop(sim,wsp);
       if (j==1)
          set_OCmx_code(wsp,"G");
@@ -1019,7 +1022,7 @@ void _pulse_shapedOCprops(Sim_info *sim, Sim_wsp *wsp, char *code, int Nch, int 
       incr_OCmx_pos(wsp);
       store_OCprop(wsp);
       _evolve_with_prop(sim,wsp);
-      store_OCdens(wsp);
+      store_OCdens(sim,wsp);
       _reset_prop(sim,wsp);
       set_OCmx_code(wsp,"P");
    }
@@ -1041,7 +1044,7 @@ void _pulse_shapedOCprops(Sim_info *sim, Sim_wsp *wsp, char *code, int Nch, int 
       incr_OCmx_pos(wsp);
       store_OCprop(wsp);
       _evolve_with_prop(sim,wsp);
-      store_OCdens(wsp);
+      store_OCdens(sim,wsp);
       _reset_prop(sim,wsp);
       if (j==1)
          set_OCmx_code(wsp,"G");
@@ -1117,21 +1120,21 @@ void _pulse_and_zgrad_shapedOCprops(Sim_info *sim, Sim_wsp *wsp, char *code, int
  ****/
  void gradOC_hermit(Sim_info *sim, Sim_wsp *wsp)
 {
-  int i,j,k,Nelem,Nch,idx,chan,dum;
-  mat_complx *lam, *cmdum=NULL;
+  int i,j,k,Nelem,Nch,idx,chan,dum, nn, NN;
+  mat_complx **lam, *cmdum=NULL;
   complx cc;
   int *gridx, *chnl, *slt;
   char code, *dumstr, mxcd[128], *chptr;
 
-  //N = sim->matdim;
-  /* printf("in gradOC_hermit\n"); */
+  //printf("in gradOC_hermit\n");
+  NN = (sim->Nfstart > sim->Nfdetect ? sim->Nfstart : sim->Nfdetect);
 
   /* check if there is pending propagator and save and evolve with it */
   if ( wsp->Uisunit != 1) {
       incr_OCmx_pos(wsp);
       store_OCprop(wsp);
       _evolve_with_prop(sim,wsp);
-      store_OCdens(wsp);
+      store_OCdens(sim,wsp);
       _reset_prop(sim,wsp);
       set_OCmx_code(wsp,"P");
    }
@@ -1145,15 +1148,25 @@ void _pulse_and_zgrad_shapedOCprops(Sim_info *sim, Sim_wsp *wsp, char *code, int
      gridx[j]=dum;
   }
   /* check the size of fid */
-  if ( dum > LEN(wsp->fid) ) {
-    fprintf(stderr,"error: gradient function detected overflow in fid points\n");
+  if ( dum > sim->ntot ) {
+    fprintf(stderr,"error: gradient function detected overflow in fid points (%d > %d)\n",dum,sim->ntot);
     exit(1);
   }
   /* optimistically set this and hope all in this function works... */
   wsp->curr_nsig = dum;
 
+  // calculate also values of Phi (oc_acq_hermit)
+  for ( i=0; i<NN; i++) {
+	  complx c = cm_trace(wsp->sigma[i % sim->Nfstart],wsp->fdetect[i % sim->Nfdetect]);
+	  wsp->OC_phivals[i+1].re += c.re;
+  }
+
+
   /* final lambda is */
-  lam = cm_dup(wsp->fdetect);
+  lam = (mat_complx**)malloc(sim->Nfdetect*sizeof(mat_complx*));
+  for (nn=0; nn<sim->Nfdetect; nn++) {
+	  lam[nn] = cm_dup(wsp->fdetect[nn]);
+  }
 
   i = wsp->OC_mxpos;
   while (i>0) {
@@ -1191,35 +1204,39 @@ void _pulse_and_zgrad_shapedOCprops(Sim_info *sim, Sim_wsp *wsp, char *code, int
 					  if (strncmp(wsp->OC_mxcode[i+1],"F",1) == 0) {
 						  /* filter */
 						  /* printf("     execute filter with %d\n",i+1); */
-						  lambda_filterOC(wsp,i+1,lam);
+						  for (nn=0; nn<sim->Nfdetect; nn++)
+							  lambda_filterOC(wsp,i+1,lam[nn]);
 					  } else {
 						  /* backevolve */
 						  /* printf("     backevolve with %d\n",i+1); */
-						  blk_simtrans_adj(lam,wsp->OC_props[i+1],sim);
+						  for (nn=0; nn<sim->Nfdetect; nn++)
+							  blk_simtrans_adj(lam[nn],wsp->OC_props[i+1],sim);
 					  }
 				  }
 			  } else {
 				  /* printf("     backevolve with %d\n",i+1); */
-				  blk_simtrans_adj(lam,wsp->OC_props[i+1],sim);
+				  for (nn=0; nn<sim->Nfdetect; nn++)
+					  blk_simtrans_adj(lam[nn],wsp->OC_props[i+1],sim);
 			  }
 			  for (k=1; k<=Nch; k++) {
 				  /* printf("     gradient calc. for shape idx %d on channel %d",slt[k],chnl[k]); */
-				  if (cmdum == NULL) {
-					  cmdum = dm_complx(wsp->chan_Ix[chnl[k]]);
-				  } else {
-					  dm_copy2cm(wsp->chan_Ix[chnl[k]], cmdum);
+				  for (nn=0; nn<NN; nn++) {
+					  int is = nn % sim->Nfstart;
+					  int id = nn % sim->Nfdetect;
+					  if (cmdum == NULL) {
+						  cmdum = dm_complx(wsp->chan_Ix[chnl[k]]);
+					  } else {
+						  dm_copy2cm(wsp->chan_Ix[chnl[k]], cmdum);
+					  }
+					  cm_multo_rev(cmdum, lam[id]);
+					  cc = cm_trace(cmdum,wsp->OC_dens[i+is*MAXOCPROPS]);
+					  wsp->fid[gridx[slt[k]]+nn*sim->ntot].re += 2.0*cc.im;
+					  dm_copy2cm_imag(wsp->chan_Iy[chnl[k]], cmdum);
+					  cm_multo_rev(cmdum,lam[id]);
+					  cc = cm_trace(cmdum,wsp->OC_dens[i+is*MAXOCPROPS]);
+					  wsp->fid[gridx[slt[k]]+nn*sim->ntot].im += 2.0*cc.im;
+					  /* printf(", stored in fid[%d]\n",gridx[slt[k]]); */
 				  }
-				  cm_multo_rev(cmdum, lam);
-				  cc = cm_trace(cmdum,wsp->OC_dens[i]);
-				  //gr.re = 2.0*cc.im;
-				  wsp->fid[gridx[slt[k]]].re += 2.0*cc.im;
-				  dm_copy2cm_imag(wsp->chan_Iy[chnl[k]], cmdum);
-				  cm_multo_rev(cmdum,lam);
-				  cc = cm_trace(cmdum,wsp->OC_dens[i]);
-				  //gr.im = 2.0*cc.im;
-				  wsp->fid[gridx[slt[k]]].im += 2.0*cc.im;
-				  /* printf(", stored in fid[%d]\n",gridx[slt[k]]); */
-				  //wsp->fid[gridx[slt[k]]] = gr;
 				  (gridx[slt[k]])--;
 			  }
 			  i--;
@@ -1234,11 +1251,13 @@ void _pulse_and_zgrad_shapedOCprops(Sim_info *sim, Sim_wsp *wsp, char *code, int
 			  if (strncmp(wsp->OC_mxcode[i+1],"F",1) == 0) {
 				  /* filter */
 				  /* printf("     execute filter with %d\n",i+1); */
-				  lambda_filterOC(wsp,i+1,lam);
+				  for (nn=0; nn<sim->Nfdetect; nn++)
+					  lambda_filterOC(wsp,i+1,lam[nn]);
 			  } else {
 				  /* backevolve */
 				  /* printf("     backevolve with %d\n",i+1); */
-				  blk_simtrans_adj(lam,wsp->OC_props[i+1],sim);
+				  for (nn=0; nn<sim->Nfdetect; nn++)
+					  blk_simtrans_adj(lam[nn],wsp->OC_props[i+1],sim);
 			  }
 		  }
 		  i--;
@@ -1247,7 +1266,8 @@ void _pulse_and_zgrad_shapedOCprops(Sim_info *sim, Sim_wsp *wsp, char *code, int
   } /*end while */
 
   if (cmdum != NULL) free_complx_matrix(cmdum);
-  free_complx_matrix(lam);
+  for (nn=0; nn<sim->Nfdetect; nn++) free_complx_matrix(lam[nn]);
+  free(lam);
   free_int_vector(gridx);
 }
 /*****
@@ -1257,18 +1277,19 @@ void _pulse_and_zgrad_shapedOCprops(Sim_info *sim, Sim_wsp *wsp, char *code, int
  *****/
 void gradOC_hermit_2(Sim_info *sim, Sim_wsp *wsp)
 {
-  int i,j,Nsh,dum,dim;
-  mat_complx *lam, *cm1, *cm2;
+  int i,j,Nsh,dum,dim, nn, NN;
+  mat_complx **lam, *cm1, *cm2;
   complx cc;
   int *gridx;
+  //printf("in gradOC_hermit_2\n");
 
-
+  NN = (sim->Nfstart > sim->Nfdetect ? sim->Nfstart : sim->Nfdetect);
   /* check if there is pending propagator and save and evolve with it */
   if ( wsp->Uisunit != 1) {
       incr_OCmx_pos(wsp);
       store_OCprop(wsp);
-      store_OCdens(wsp); /* sigma of previous step */
-      _evolve_with_prop(sim,wsp); /* next step probably will not happen */
+      store_OCdens(sim,wsp); /* sigma of previous step */
+      _evolve_with_prop(sim,wsp); /* next step probably will not happen but used to calculate Phi */
       _reset_prop(sim,wsp);
    }
 
@@ -1282,18 +1303,27 @@ void gradOC_hermit_2(Sim_info *sim, Sim_wsp *wsp)
      //printf("\t gridx[%d] = %d\n",j, dum);
   }
   /* check the size of fid */
-  if ( dum > LEN(wsp->fid) ) {
-    fprintf(stderr,"error: gradient function detected overflow in fid points\n");
+  if ( dum > sim->ntot ) {
+    fprintf(stderr,"error: gradient function detected overflow in fid points (%d > %d)\n",dum,sim->ntot);
     exit(1);
   }
   /* optimistically set this and hope all in this function works... */
   wsp->curr_nsig = dum;
 
+  // calculate also values of Phi (oc_acq_hermit)
+  for ( i=0; i<NN; i++) {
+	  complx c = cm_trace(wsp->sigma[i % sim->Nfstart],wsp->fdetect[i % sim->Nfdetect]);
+	  wsp->OC_phivals[i+1].re += c.re;
+	  //printf("\t--> oc_acq_hermit form grad: %.4f\n",c.re);
+  }
+
   /* final lambda is */
-  lam = cm_dup(wsp->fdetect);
-  dim = lam->row;
-  cm1 = complx_matrix(dim,dim,MAT_DENSE,0,lam->basis);
-  cm2 = complx_matrix(dim,dim,MAT_DENSE,0,lam->basis);
+  lam = (mat_complx**)malloc(sim->Nfdetect*sizeof(mat_complx*));
+  for (nn=0; nn<sim->Nfdetect; nn++)
+	  lam[nn] = cm_dup(wsp->fdetect[nn]);
+  dim = lam[0]->row;
+  cm1 = complx_matrix(dim,dim,MAT_DENSE,0,lam[0]->basis);
+  cm2 = complx_matrix(dim,dim,MAT_DENSE,0,lam[0]->basis);
 
   i = wsp->OC_mxpos;
   while (i>0) {
@@ -1302,42 +1332,49 @@ void gradOC_hermit_2(Sim_info *sim, Sim_wsp *wsp)
 		  if (wsp->OC_deriv[i][2*(j-1)] == NULL) continue;
 		  assert(wsp->OC_deriv[i][2*(j-1)] != NULL);
 		  assert(wsp->OC_deriv[i][2*(j-1)+1] != NULL);
-		  if (wsp->OC_dens[i]->type != MAT_DENSE) cm_dense_full(wsp->OC_dens[i]);
-		  //if (i==1) printf("\t %d: %d; gridx[%d] = %d",i,j,j,gridx[j]);
-		  //if (i==1) cm_print(wsp->OC_dens[i],"dens");
-		  //if (i==1) cm_print(wsp->OC_props[i]->m,"prop");
-		  cblas_zgemm(CblasColMajor,CblasNoTrans,CblasConjTrans,dim,dim,dim,&Cunit,wsp->OC_dens[i]->data,dim,wsp->OC_props[i]->m->data,dim,&Cnull,cm1->data,dim);
-		  //if (i==1) printf(" A");
-		  //cm_print(wsp->OC_dens[i],"rho");
-		  //cm_print(wsp->OC_props[i]->m,"prop Uk");
-		  //cm_print(cm1,"cm1");
-		  /* x channel */
-		  cblas_zgemm(CblasColMajor,CblasNoTrans,CblasNoTrans,dim,dim,dim,&Cunit,wsp->OC_deriv[i][2*(j-1)]->data,dim,cm1->data,dim,&Cnull,cm2->data,dim);
-		  //if (i==1) printf(" B");
-		  //cm_print(wsp->OC_deriv[i][2*(j-1)],"deriv Uk");
-		  //cm_print(cm2,"cm2");
-		  cc = cm_trace(lam,cm2);
-		  //printf("X %d shape %d: cc = %g, %g\n",i,j,cc.re, cc.im);
-		  //if (i==1) printf(" uf");
-		  wsp->fid[gridx[j]].re += 2.0*cc.re;
-		  //if (i==1) printf(" gr");
-		  /* y channel */
-		  cblas_zgemm(CblasColMajor,CblasNoTrans,CblasNoTrans,dim,dim,dim,&Cunit,wsp->OC_deriv[i][2*(j-1)+1]->data,dim,cm1->data,dim,&Cnull,cm2->data,dim);
-		  cc = cm_trace(lam,cm2);
-		  //printf("Y %d shape %d: cc = %g, %g\n",i,j,cc.re, cc.im);
-		  //if (i==1) printf(" bu");
-		  wsp->fid[gridx[j]].im += 2.0*cc.re;
+		  for (nn=0; nn<NN; nn++) {
+			  int is = nn % sim->Nfstart;
+			  int id = nn % sim->Nfdetect;
+			  if (wsp->OC_dens[i+is*MAXOCPROPS]->type != MAT_DENSE) cm_dense_full(wsp->OC_dens[i+is*MAXOCPROPS]);
+			  	  //if (i==1) printf("\t %d: %d; gridx[%d] = %d",i,j,j,gridx[j]);
+			  	  //if (i==1) cm_print(wsp->OC_dens[i],"dens");
+			  	  //if (i==1) cm_print(wsp->OC_props[i]->m,"prop");
+			  cblas_zgemm(CblasColMajor,CblasNoTrans,CblasConjTrans,dim,dim,dim,&Cunit,wsp->OC_dens[i+is*MAXOCPROPS]->data,dim,wsp->OC_props[i]->m->data,dim,&Cnull,cm1->data,dim);
+			  	  //if (i==1) printf(" A");
+			  	  //cm_print(wsp->OC_dens[i],"rho");
+			  	  //cm_print(wsp->OC_props[i]->m,"prop Uk");
+			  	  //cm_print(cm1,"cm1");
+			  /* x channel */
+			  cblas_zgemm(CblasColMajor,CblasNoTrans,CblasNoTrans,dim,dim,dim,&Cunit,wsp->OC_deriv[i][2*(j-1)]->data,dim,cm1->data,dim,&Cnull,cm2->data,dim);
+			  	  //if (i==1) printf(" B");
+			  	  //cm_print(wsp->OC_deriv[i][2*(j-1)],"deriv Uk");
+			  	  //cm_print(cm2,"cm2");
+			  cc = cm_trace(lam[id],cm2);
+			  	  //printf("X %d shape %d: cc = %g, %g\n",i,j,cc.re, cc.im);
+			  	  //if (i==1) printf(" uf");
+			  wsp->fid[gridx[j]+nn*sim->ntot].re += 2.0*cc.re;
+			  	  //if (i==1) printf(" gr");
+			  /* y channel */
+			  cblas_zgemm(CblasColMajor,CblasNoTrans,CblasNoTrans,dim,dim,dim,&Cunit,wsp->OC_deriv[i][2*(j-1)+1]->data,dim,cm1->data,dim,&Cnull,cm2->data,dim);
+			  cc = cm_trace(lam[id],cm2);
+			  	  //printf("Y %d shape %d: cc = %g, %g\n",i,j,cc.re, cc.im);
+			  	  //if (i==1) printf(" bu");
+			  wsp->fid[gridx[j]+nn*sim->ntot].im += 2.0*cc.re;
+		  }
 		  //if (i==1) printf(" ha\n");
 		  (gridx[j])--;
 	  }
-	  blk_simtrans_adj(lam,wsp->OC_props[i],sim);
+	  for (nn=0; nn<sim->Nfdetect; nn++)
+		  blk_simtrans_adj(lam[nn],wsp->OC_props[i],sim);
 	  i--;
   } /*end while */
 
 
   free_complx_matrix(cm1);
   free_complx_matrix(cm2);
-  free_complx_matrix(lam);
+  for (nn=0; nn<sim->Nfdetect; nn++)
+	  free_complx_matrix(lam[nn]);
+  free(lam);
   free_int_vector(gridx);
   //printf("_gradOC_hermit_2 done\n");
 }
@@ -1348,21 +1385,21 @@ void gradOC_hermit_2(Sim_info *sim, Sim_wsp *wsp)
  ****/
  void gradOC_nonhermit(Sim_info *sim, Sim_wsp *wsp)
 {
-  int i,j,k,Nelem,Nch,idx,chan,dum;
-  mat_complx *lam, *tmpM=NULL, *tmpMM=NULL;
-  complx cc, cc1;
+  int i,j,k,Nelem,Nch,idx,chan,dum, nn, NN;
+  mat_complx **lam, *tmpM=NULL, *tmpMM=NULL;
+  complx cc, *cc1;
   int *gridx, *chnl, *slt;
   char code, *dumstr, mxcd[128], *chptr;
   
   /* printf("in gradOC_nonhermit\n"); */
-  //N = sim->matdim;
+  NN = (sim->Nfstart > sim->Nfdetect ? sim->Nfstart : sim->Nfdetect);
 
   /* check if there is pending propagator and save and evolve with it */
   if ( wsp->Uisunit != 1) {
       incr_OCmx_pos(wsp);
       store_OCprop(wsp);
       _evolve_with_prop(sim,wsp);
-      store_OCdens(wsp);
+      store_OCdens(sim,wsp);
       _reset_prop(sim,wsp);
       set_OCmx_code(wsp,"P");
    }
@@ -1376,17 +1413,27 @@ void gradOC_hermit_2(Sim_info *sim, Sim_wsp *wsp)
      gridx[j] = dum;
   }
   /* check the size of fid */
-  if ( dum > LEN(wsp->fid) ) {
+  if ( dum > sim->ntot ) {
     fprintf(stderr,"error: gradient function detected overflow in fid points\n");
     exit(1);
   }
   /* optimistically set this and hope all in this function works... */
   wsp->curr_nsig = dum;
-  
+
+  // calculate also Phi values (oc_acq_nonhermit)
+  for (i=0; i<NN; i++) {
+	  complx c = cm_trace_adjoint(wsp->fdetect[i % sim->Nfdetect],wsp->sigma[i % sim->Nfstart]);
+	  wsp->OC_phivals[i+1].re += c.re*c.re+c.im*c.im;
+  }
+
   /* here, lam is holding adjoint of lambda throughout the calculations */
-  lam = cm_adjoint(wsp->fdetect);
+  lam = (mat_complx**)malloc(sim->Nfdetect*sizeof(mat_complx*));
+  for (nn=0; nn<sim->Nfdetect; nn++)
+	  lam[nn] = cm_adjoint(wsp->fdetect[nn]);
   /* prepare constant complex term Tr[rho_N+ lam_N] */
-  cc1 = cm_trace_adjoint(wsp->OC_dens[wsp->OC_mxpos],wsp->fdetect);
+  cc1 = (complx*)malloc(NN*sizeof(complx));
+  for (nn=0; nn<NN; nn++)
+	  cc1[nn] = cm_trace_adjoint(wsp->OC_dens[wsp->OC_mxpos+MAXOCPROPS*(nn % sim->Nfstart)],wsp->fdetect[nn % sim->Nfdetect]);
 
   i = wsp->OC_mxpos;
   while (i>0) {
@@ -1426,40 +1473,47 @@ void gradOC_hermit_2(Sim_info *sim, Sim_wsp *wsp)
 					  if (strncmp(wsp->OC_mxcode[i+1],"F",1) == 0) {
 						  /* filter */
 						  /* printf("     execute filter with %d\n",i+1); */
-						  lambda_filterOC(wsp,i+1,lam);
+						  for (nn=0; nn<sim->Nfdetect; nn++)
+							  lambda_filterOC(wsp,i+1,lam[nn]);
 					  } else {
 						  /* backevolve */
 						  /* printf("     backevolve with %d\n",i+1); */
-						  blk_simtrans_adj(lam,wsp->OC_props[i+1],sim);
+						  for (nn=0; nn<sim->Nfdetect; nn++)
+							  blk_simtrans_adj(lam[nn],wsp->OC_props[i+1],sim);
 					  }
 				  }
 			  } else {
 				  /* printf("     backevolve with %d\n",i+1); */
-				  blk_simtrans_adj(lam,wsp->OC_props[i+1],sim);
+				  for (nn=0; nn<sim->Nfdetect; nn++)
+					  blk_simtrans_adj(lam[nn],wsp->OC_props[i+1],sim);
 			  }
-			  /* prepare constant matrix [rho_j, lam_j+], note that lam is already adjoint! */
-			  tmpM = cm_commutator(wsp->OC_dens[i], lam);
 			  /* loop over channels */
 			  for (k=1; k<=Nch; k++) {
 				  /* printf("     gradient calc. for shape idx %d on channel %d",slt[k],chnl[k]); */
 				  /* cc = Cmul( m_trace(puls->chan_Ix[chnl[k]], puls->tmp), cc1); */
-				  if (tmpMM == NULL) {
-					  tmpMM = dm_complx(wsp->chan_Ix[chnl[k]]);
-				  } else {
-					  dm_copy2cm(wsp->chan_Ix[chnl[k]],tmpMM);
+				  for (nn=0; nn<NN; nn++) {
+					int is = nn % sim->Nfstart;
+					int id = nn % sim->Nfdetect;
+					/* prepare constant matrix [rho_j, lam_j+], note that lam is already adjoint! */
+					tmpM = cm_commutator(wsp->OC_dens[i+is*MAXOCPROPS], lam[id]);
+					if (tmpMM == NULL) {
+						tmpMM = dm_complx(wsp->chan_Ix[chnl[k]]);
+					} else {
+						dm_copy2cm(wsp->chan_Ix[chnl[k]],tmpMM);
+					}
+					cc = Cmul( cm_trace_adjoint(tmpMM,tmpM), cc1[nn]);
+					/* I use this trace since it is faster, Ix is hermitian so adjoint does not change it */
+					wsp->fid[gridx[slt[k]]+nn*sim->ntot].re += 2.0*cc.im;
+					/* cc = Cmul( m_trace(puls->chan_Iy[chnl[k]], puls->tmp), cc1); */
+					dm_copy2cm_imag(wsp->chan_Iy[chnl[k]],tmpMM);
+					cc = Cmul( cm_trace_adjoint(tmpMM,tmpM), cc1[nn]);
+					/* I use this trace since it is faster, Iy is hermitian so adjoint does not change it */
+					//gr.im = 2.0*cc.im;
+					wsp->fid[gridx[slt[k]]+nn*sim->ntot].im += 2.0*cc.im;
+					/* printf(", stored in fid[%d]\n",gridx[slt[k]]); */
+					//wsp->fid[gridx[slt[k]]] = gr;
+					free_complx_matrix(tmpM);
 				  }
-				  cc = Cmul( cm_trace_adjoint(tmpMM,tmpM), cc1);
-				  /* I use this trace since it is faster, Ix is hermitian so adjoint does not change it */
-				  //gr.re = 2.0*cc.im;
-				  wsp->fid[gridx[slt[k]]].re += 2.0*cc.im;
-				  /* cc = Cmul( m_trace(puls->chan_Iy[chnl[k]], puls->tmp), cc1); */
-				  dm_copy2cm_imag(wsp->chan_Iy[chnl[k]],tmpMM);
-				  cc = Cmul( cm_trace_adjoint(tmpMM,tmpM), cc1);
-				  /* I use this trace since it is faster, Iy is hermitian so adjoint does not change it */
-				  //gr.im = 2.0*cc.im;
-				  wsp->fid[gridx[slt[k]]].im += 2.0*cc.im;
-				  /* printf(", stored in fid[%d]\n",gridx[slt[k]]); */
-				  //wsp->fid[gridx[slt[k]]] = gr;
 				  (gridx[slt[k]])--;
 			  }
 			  i--;
@@ -1473,19 +1527,23 @@ void gradOC_hermit_2(Sim_info *sim, Sim_wsp *wsp)
 			  if (strncmp(wsp->OC_mxcode[i+1],"F",1) == 0) {
 				  /* filter */
 				  /* printf("     execute filter with %d\n",i+1); */
-				  lambda_filterOC(wsp,i+1,lam);
+				  for (nn=0; nn<sim->Nfdetect; nn++)
+					  lambda_filterOC(wsp,i+1,lam[nn]);
 			  } else {
 				  /* backevolve */
 				  /* printf("     backevolve with %d\n",i+1); */
-				  blk_simtrans_adj(lam,wsp->OC_props[i+1],sim);
+				  for (nn=0; nn<sim->Nfdetect; nn++)
+					  blk_simtrans_adj(lam[nn],wsp->OC_props[i+1],sim);
 			  }
 		  }
 		  i--;
 	  }
   } /*end while */
   
-  free_complx_matrix(lam);
-  free_complx_matrix(tmpM);
+  for (nn=0; nn<sim->Nfdetect; nn++)
+	  free_complx_matrix(lam[nn]);
+  free(lam);
+  free(cc1);
   if (tmpMM != NULL) free_complx_matrix(tmpMM);
   free_int_vector(gridx);
 }
@@ -1497,16 +1555,18 @@ void gradOC_hermit_2(Sim_info *sim, Sim_wsp *wsp)
   *****/
  void gradOC_nonhermit_2(Sim_info *sim, Sim_wsp *wsp)
  {
-   int i,j,Nsh,dum,dim;
-   mat_complx *lam, *cm1, *cm2;
-   complx cc, cc2, grx, gry;
+   int i,j,Nsh,dum,dim, nn, NN;
+   mat_complx **lam, *cm1, *cm2;
+   complx cc, *cc2, grx, gry;
    int *gridx;
+
+   NN = (sim->Nfstart > sim->Nfdetect ? sim->Nfstart : sim->Nfdetect);
 
    /* check if there is pending propagator and save and evolve with it */
    if ( wsp->Uisunit != 1) {
        incr_OCmx_pos(wsp);
        store_OCprop(wsp);
-       store_OCdens(wsp); /* sigma of previous step */
+       store_OCdens(sim,wsp); /* sigma of previous step */
        _evolve_with_prop(sim,wsp); /* next step probably will not happen */
        _reset_prop(sim,wsp);
     }
@@ -1521,20 +1581,30 @@ void gradOC_hermit_2(Sim_info *sim, Sim_wsp *wsp)
       //printf("\t gridx[%d] = %d\n",j, dum);
    }
    /* check the size of fid */
-   if ( dum > LEN(wsp->fid) ) {
+   if ( dum > sim->ntot ) {
      fprintf(stderr,"error: gradient function detected overflow in fid points\n");
      exit(1);
    }
    /* optimistically set this and hope all in this function works... */
    wsp->curr_nsig = dum;
 
+   // calculate also Phi values (oc_acq_nonhermit)
+   for (i=0; i<NN; i++) {
+ 	  complx c = cm_trace_adjoint(wsp->fdetect[i % sim->Nfdetect],wsp->sigma[i % sim->Nfstart]);
+ 	  wsp->OC_phivals[i+1].re += c.re*c.re+c.im*c.im;
+   }
+
    /* final lambda is adjoint as it is not Hermitian */
-   lam = cm_adjoint(wsp->fdetect);
-   dim = lam->row;
-   cm1 = complx_matrix(dim,dim,MAT_DENSE,0,lam->basis);
-   cm2 = complx_matrix(dim,dim,MAT_DENSE,0,lam->basis);
+   lam = (mat_complx**)malloc(sim->Nfdetect*sizeof(mat_complx*));
+   for (nn=0; nn<sim->Nfdetect; nn++)
+	   lam[nn] = cm_adjoint(wsp->fdetect[nn]);
+   dim = lam[0]->row;
+   cm1 = complx_matrix(dim,dim,MAT_DENSE,0,lam[0]->basis);
+   cm2 = complx_matrix(dim,dim,MAT_DENSE,0,lam[0]->basis);
    /* constant in front of the gradient */
-   cc2 = cm_trace_adjoint(wsp->sigma,wsp->fdetect);
+   cc2 = (complx*)malloc(NN*sizeof(complx));
+   for (nn=0; nn<NN; nn++)
+	   cc2[nn] = cm_trace_adjoint(wsp->sigma[nn % sim->Nfstart],wsp->fdetect[nn % sim->Nfdetect]);
 
    i = wsp->OC_mxpos;
    while (i>0) {
@@ -1543,43 +1613,51 @@ void gradOC_hermit_2(Sim_info *sim, Sim_wsp *wsp)
  		  if (wsp->OC_deriv[i][2*(j-1)] == NULL) continue;
  		  assert(wsp->OC_deriv[i][2*(j-1)] != NULL);
  		  assert(wsp->OC_deriv[i][2*(j-1)+1] != NULL);
- 		  if (wsp->OC_dens[i]->type != MAT_DENSE) cm_dense_full(wsp->OC_dens[i]);
- 		  //if (i==1) printf("\t %d: %d; gridx[%d] = %d",i,j,j,gridx[j]);
- 		  //if (i==1) cm_print(wsp->OC_dens[i],"dens");
- 		  //if (i==1) cm_print(wsp->OC_props[i]->m,"prop");
- 		  cblas_zgemm(CblasColMajor,CblasNoTrans,CblasConjTrans,dim,dim,dim,&Cunit,wsp->OC_dens[i]->data,dim,wsp->OC_props[i]->m->data,dim,&Cnull,cm1->data,dim);
- 		  //if (i==1) printf(" A");
- 		  //cm_print(wsp->OC_dens[i],"rho");
- 		  //cm_print(wsp->OC_props[i]->m,"prop Uk");
- 		  //cm_print(cm1,"cm1");
- 		  /* x channel - first part */
- 		  cblas_zgemm(CblasColMajor,CblasNoTrans,CblasNoTrans,dim,dim,dim,&Cunit,wsp->OC_deriv[i][2*(j-1)]->data,dim,cm1->data,dim,&Cnull,cm2->data,dim);
- 		  grx = cm_trace(lam,cm2);
- 		  /* y channel - first part  */
- 		  cblas_zgemm(CblasColMajor,CblasNoTrans,CblasNoTrans,dim,dim,dim,&Cunit,wsp->OC_deriv[i][2*(j-1)+1]->data,dim,cm1->data,dim,&Cnull,cm2->data,dim);
- 		  gry = cm_trace(lam,cm2);
- 		  /* preparing second part */
- 		  cblas_zgemm(CblasColMajor,CblasNoTrans,CblasNoTrans,dim,dim,dim,&Cunit,wsp->OC_props[i]->m->data,dim,wsp->OC_dens[i]->data,dim,&Cnull,cm1->data,dim);
- 		  /* x channel - second part */
- 		  cblas_zgemm(CblasColMajor,CblasNoTrans,CblasConjTrans,dim,dim,dim,&Cunit,cm1->data,dim,wsp->OC_deriv[i][2*(j-1)]->data,dim,&Cnull,cm2->data,dim);
- 		  cc = cm_trace(lam,cm2);
- 		  grx.re += cc.re; grx.im += cc.im;
- 		  wsp->fid[gridx[j]].re += 2.0*(cc2.re*grx.re-cc2.im*grx.im);
- 		  /* y channel - second part  */
- 		  cblas_zgemm(CblasColMajor,CblasNoTrans,CblasConjTrans,dim,dim,dim,&Cunit,cm1->data,dim,wsp->OC_deriv[i][2*(j-1)+1]->data,dim,&Cnull,cm2->data,dim);
- 		  cc = cm_trace(lam,cm2);
- 		  gry.re += cc.re; gry.im += cc.im;
- 		  wsp->fid[gridx[j]].im += 2.0*(cc2.re*gry.re-cc2.im*gry.im);
- 		  (gridx[j])--;
+ 		 for (nn=0; nn<NN; nn++) {
+ 			int is = nn % sim->Nfstart;
+ 			int id = nn % sim->Nfdetect;
+ 			if (wsp->OC_dens[i+is*MAXOCPROPS]->type != MAT_DENSE) cm_dense_full(wsp->OC_dens[i+is*MAXOCPROPS]);
+ 				//if (i==1) printf("\t %d: %d; gridx[%d] = %d",i,j,j,gridx[j]);
+ 				//if (i==1) cm_print(wsp->OC_dens[i],"dens");
+ 				//if (i==1) cm_print(wsp->OC_props[i]->m,"prop");
+ 			cblas_zgemm(CblasColMajor,CblasNoTrans,CblasConjTrans,dim,dim,dim,&Cunit,wsp->OC_dens[i+is*MAXOCPROPS]->data,dim,wsp->OC_props[i]->m->data,dim,&Cnull,cm1->data,dim);
+ 				//if (i==1) printf(" A");
+ 				//cm_print(wsp->OC_dens[i],"rho");
+ 				//cm_print(wsp->OC_props[i]->m,"prop Uk");
+ 				//cm_print(cm1,"cm1");
+ 			/* x channel - first part */
+ 			cblas_zgemm(CblasColMajor,CblasNoTrans,CblasNoTrans,dim,dim,dim,&Cunit,wsp->OC_deriv[i][2*(j-1)]->data,dim,cm1->data,dim,&Cnull,cm2->data,dim);
+ 			grx = cm_trace(lam[id],cm2);
+ 			/* y channel - first part  */
+ 			cblas_zgemm(CblasColMajor,CblasNoTrans,CblasNoTrans,dim,dim,dim,&Cunit,wsp->OC_deriv[i][2*(j-1)+1]->data,dim,cm1->data,dim,&Cnull,cm2->data,dim);
+ 			gry = cm_trace(lam[id],cm2);
+ 			/* preparing second part */
+ 			cblas_zgemm(CblasColMajor,CblasNoTrans,CblasNoTrans,dim,dim,dim,&Cunit,wsp->OC_props[i]->m->data,dim,wsp->OC_dens[i+is*MAXOCPROPS]->data,dim,&Cnull,cm1->data,dim);
+ 			/* x channel - second part */
+ 			cblas_zgemm(CblasColMajor,CblasNoTrans,CblasConjTrans,dim,dim,dim,&Cunit,cm1->data,dim,wsp->OC_deriv[i][2*(j-1)]->data,dim,&Cnull,cm2->data,dim);
+ 			cc = cm_trace(lam[id],cm2);
+ 			grx.re += cc.re; grx.im += cc.im;
+ 			wsp->fid[gridx[j]+nn*sim->ntot].re += 2.0*(cc2[nn].re*grx.re-cc2[nn].im*grx.im);
+ 			/* y channel - second part  */
+ 			cblas_zgemm(CblasColMajor,CblasNoTrans,CblasConjTrans,dim,dim,dim,&Cunit,cm1->data,dim,wsp->OC_deriv[i][2*(j-1)+1]->data,dim,&Cnull,cm2->data,dim);
+ 			cc = cm_trace(lam[id],cm2);
+ 			gry.re += cc.re; gry.im += cc.im;
+ 			wsp->fid[gridx[j]+nn*sim->ntot].im += 2.0*(cc2[nn].re*gry.re-cc2[nn].im*gry.im);
+ 		 }
+ 		 (gridx[j])--;
  	  }
- 	  blk_simtrans_adj(lam,wsp->OC_props[i],sim);
+ 	  for (nn=0; nn<sim->Nfdetect; nn++)
+ 		  blk_simtrans_adj(lam[nn],wsp->OC_props[i],sim);
  	  i--;
    } /*end while */
 
 
    free_complx_matrix(cm1);
    free_complx_matrix(cm2);
-   free_complx_matrix(lam);
+   for (nn=0; nn<sim->Nfdetect; nn++)
+	   free_complx_matrix(lam[nn]);
+   free(lam);
+   free(cc2);
    free_int_vector(gridx);
    //printf("_gradOC_hermit_2 done\n");
  }
@@ -3078,6 +3156,7 @@ double OptimizeLBFGS(Tcl_Interp* interp)
 void acqOC_hermit(Sim_info *sim, Sim_wsp *wsp)
 {
   complx c;
+  int i, NN;
   
   /* disable when Hamiltonian is requested in block-diagonal form */
   /*  can be enabled when missing code is added */
@@ -3091,19 +3170,20 @@ void acqOC_hermit(Sim_info *sim, Sim_wsp *wsp)
     exit(1);  
   }
   
-  if (wsp->curr_nsig + 1 > LEN(wsp->fid)) {
+  if (wsp->curr_nsig + 1 > sim->ntot) {
     fprintf(stderr,"error: oc_acq_hermit overflow in fid points\n");
     exit(1);
   }
 
   _evolve_with_prop(sim,wsp);
   _reset_prop(sim,wsp);
-
-  c = cm_trace(wsp->sigma,wsp->fdetect);
-  c.im = 0.0;
-  
-  //wsp->fid[++(wsp->curr_nsig)] = c;
-  wsp->fid[++(wsp->curr_nsig)].re += c.re;
+  (wsp->curr_nsig)++;
+  NN = (sim->Nfstart > sim->Nfdetect ? sim->Nfstart : sim->Nfdetect);
+  for ( i=0; i<NN; i++) {
+	  c = cm_trace(wsp->sigma[i % sim->Nfstart],wsp->fdetect[i % sim->Nfdetect]);
+	  c.im = 0.0;
+	  wsp->fid[wsp->curr_nsig+i*sim->ntot].re += c.re;
+  }
 }
 
 /****
@@ -3115,6 +3195,7 @@ void acqOC_nonhermit(Sim_info *sim, Sim_wsp *wsp)
 {
   complx c;
   double r;
+  int i, NN;
 
   /* disable when Hamiltonian is requested in block-diagonal form */
   /*  can be enabled when missing code is added */
@@ -3128,13 +3209,14 @@ void acqOC_nonhermit(Sim_info *sim, Sim_wsp *wsp)
     exit(1);  
   }
   
-  if (wsp->curr_nsig + 1 > LEN(wsp->fid)) {
+  if (wsp->curr_nsig + 1 > sim->ntot) {
     fprintf(stderr,"error: oc_acq_nonhermit overflow in fid points\n");
     exit(1);
   }
 
   _evolve_with_prop(sim,wsp);
   _reset_prop(sim,wsp);
+  NN = (sim->Nfstart > sim->Nfdetect ? sim->Nfstart : sim->Nfdetect);
 
   /* normalize with sizes of start and detect operators -should we do?- */
   /* m_adjoint(puls->tmp,puls->fstart);
@@ -3145,14 +3227,15 @@ void acqOC_nonhermit(Sim_info *sim, Sim_wsp *wsp)
   n2 = c.re;
   */
 
-  c = cm_trace_adjoint(wsp->fdetect,wsp->sigma);
-  r = c.re*c.re+c.im*c.im;
+  (wsp->curr_nsig)++;
+  for (i=0; i<NN; i++) {
+	  c = cm_trace_adjoint(wsp->fdetect[i % sim->Nfdetect],wsp->sigma[i % sim->Nfstart]);
+	  r = c.re*c.re+c.im*c.im;
   /* r /= sqrt(n1);
      r /= sqrt(n2);
   */
-
-  //wsp->fid[++(wsp->curr_nsig)] = Complx(r,0.0);
-  wsp->fid[++(wsp->curr_nsig)].re += r;
+	  wsp->fid[wsp->curr_nsig + i*sim->ntot].re += r;
+  }
 }
 
 /****

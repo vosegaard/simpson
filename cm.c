@@ -98,6 +98,13 @@ void cv_conj(complx *vec)
 	cblas_dscal(LEN(vec),-1.0,ptr,2);
 }
 
+
+void cv_conj2(complx *vec, int len)
+{
+	double *ptr = (double*)(vec) +1;
+	cblas_dscal(len,-1.0,ptr,2);
+}
+
 double cv_asum(complx *vec)
 {
 	double res;

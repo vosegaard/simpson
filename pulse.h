@@ -37,5 +37,6 @@ void _pulse(Sim_info *sim, Sim_wsp *wsp, double duration);
 void _delay(Sim_info *sim, Sim_wsp *wsp, double duration);
 void _pulseid(Sim_info *sim,Sim_wsp *wsp,double duration);
 int _setrfprop(Sim_info *sim, Sim_wsp *wsp);
+void _acq(Sim_info *sim, Sim_wsp *wsp, double phase, int do_reset);
 
 #endif /* __Pulse_H */

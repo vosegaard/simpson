@@ -95,9 +95,9 @@ typedef struct _Hyperfine {
 //} Perms;
 
 typedef struct _Sim_info {
-  /* remains from simpson 2 */
   SpinSys* ss;
-  mat_complx *fstart, *fdetect;
+  mat_complx **fstart, **fdetect;
+  int Nfstart, Nfdetect;
   /* spinsys interactions */
   Shift **CS;
   Dipole **DD;
@@ -108,10 +108,10 @@ typedef struct _Sim_info {
   Hyperfine **HF;
   int nCS, nDD, nJ, nQ, nMIX, nG, nHF;
   double specfreq, Bzero, wr, sw, sw1, brl, gamma_zero;
-  int np, ni, ntot, ngamma, matdim, obs_nuc, imethod, crystfile_from, crystfile_to;
+  int np, ni, ntot, ngamma, matdim, *obs_nuc, imethod, crystfile_from, crystfile_to;
   char crystfile[256],rfproffile[256],pulsename[64],parname[256],targetcrystfile[256];
   /* switches */
-  int acq_adjoint, dipole_check, realspec, sparse, conjugate_fid, EDsymmetry, Hint_isdiag;
+  int acq_adjoint, dipole_check, realspec, sparse, *conjugate_fid, EDsymmetry, Hint_isdiag;
   int block_diag, averaging, interpolation;
   /* DOR related */
   int dor;
@@ -153,7 +153,7 @@ typedef struct _Sim_wsp {
 	blk_mat_double *ham_blk, *sumHrf;
 	mat_double *sumUph;
 	mat_double **chan_Ix, **chan_Iy, **chan_Iz, **Ix, **Iz;
-	mat_complx *fstart, *fdetect, *sigma;
+	mat_complx **fstart, **fdetect, **sigma;
 	blk_mat_complx *U, *dU, *tmpU;
 	complx * fid;
 	int curr_nsig;
@@ -175,9 +175,10 @@ typedef struct _Sim_wsp {
     double acqphase, acqblock_t0;
     /* parameters for Optimal Control */
     int OC_propstatus, OC_mxpos;
-    mat_complx *OC_dens[MAXOCPROPS], *OC_deriv[MAXOCPROPS][MAXOCSHAPES*2];
+    mat_complx **OC_dens, *OC_deriv[MAXOCPROPS][MAXOCSHAPES*2];
     blk_mat_complx *OC_props[MAXOCPROPS];
     char *OC_mxcode[MAXOCPROPS];
+    complx *OC_phivals;
     /* parametrs for spinach */
     int spinach_delay_Nsub, **spinach_delay_sub_idx, spinach_pulse_Nsub, **spinach_pulse_sub_idx;
     /* new Hamiltonian assembling */
