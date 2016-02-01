@@ -75,7 +75,7 @@ typedef struct _td{
   Ave_elem *ave_struct;
   int Navepar, Naveval;
   double *ave_weight;
-  complx **fids;
+  complx **fids, **phivals;
   double phase;
 } thread_data;
 
@@ -112,16 +112,21 @@ void putbits(char *bits,int e)
 
 void thread_work(int thread_id, Tcl_Interp *interp){
   Sim_wsp * wsp;
-  complx *fidsum;
+  complx *fidsum, *phivals=NULL;
   double weight;
   int i, Np_start, ncr_start, icr, nrf_start, irf, nz_start, iz;
   int ave_start;
 
   Sim_info *sim = thrd.sim;
   int Naveval = thrd.Naveval;
+  int collect_phivals = OCpar.isinit && OCpar.gradmode;
 
   fidsum = thrd.fids[thread_id];
   cv_zero(fidsum);
+  if (collect_phivals) {
+	  phivals = thrd.phivals[thread_id];
+	  cv_zero(phivals);
+  }
   wsp = wsp_initialize(sim);
   /* store sim and wsp memory addresses to Tcl interp */
   store_sim_pointers(interp, sim, wsp);
@@ -148,9 +153,12 @@ void thread_work(int thread_id, Tcl_Interp *interp){
 	  wsp->zcoor = thrd.zvals[iz];
 	  set_inhom_offsets(sim,wsp,thrd.zoffsetvals[iz]);
 	  set_averaging_parameters(sim,wsp,thrd.ave_struct,thrd.Navepar,ave_start);
+	  if (collect_phivals) cv_zero(wsp->OC_phivals);
 	  sim_calcfid(sim, wsp);
 	  cv_multod(fidsum, wsp->fid, weight);
-	  //printf("process (%i/%i): fidsum[end].re = %f\n", process_id, thread_id, fidsum[sim->ntot].re);
+	  if (collect_phivals) cv_multod(phivals,wsp->OC_phivals,weight);
+	  //printf("worker (%i/%i): fidsum[1].re = %f\n", thread_id+1,glob_info.mpi_rank+1, fidsum[1].re);
+	  //if (collect_phivals) printf("worker (%i/%i): phivals[1].re = %f\n", thread_id+1,glob_info.mpi_rank+1, phivals[1].re);
 	  if (verbose & VERBOSE_PROGRESS) {
 		  printf("Worker %i/%i: [cryst %d/%d]",thread_id+1,glob_info.mpi_rank+1,icr,thrd.ncr);
 		  if (thrd.nrf > 1) printf(" [rfsc %d/%d]",irf,thrd.nrf);
@@ -1038,13 +1046,15 @@ void initial_interpol_run(Tcl_Interp *interp, Sim_info *sim) {
 }
 ****/
 
-complx * simpson_common_work(Tcl_Interp *interp, char *state, int *ints_out, double *dbls_out)
+//complx * simpson_common_work(Tcl_Interp *interp, char *state, int *ints_out, double *dbls_out)
+void simpson_common_work(Tcl_Interp *interp, char *state, int *ints_out, double *dbls_out, complx **fidsumptr, complx **phivalsptr)
 {
-	int i, ncr, nrf, nz, Navepar, Naveval, Ntot, num_threads;
+	int i, ncr, nrf, nz, Navepar, Naveval, Ntot, num_threads, NN, fidlen;
 	double *zvals=NULL, *zoffsetvals=NULL, *aveweight=NULL;
 	Ave_elem *avestruct=NULL;
 	Sim_info *sim;
-	complx *fidsum=NULL;
+	complx *fidsum=NULL, *phivals=NULL;
+    int collect_phivals = OCpar.isinit && OCpar.gradmode;
 
 	/* read global simulation information */
 	sim = sim_initialize(interp);
@@ -1057,13 +1067,25 @@ complx * simpson_common_work(Tcl_Interp *interp, char *state, int *ints_out, dou
 	nz = LEN(zvals);
 	Ntot = ncr*nrf*nz*Naveval; /* Total number of jobs */
 	num_threads = glob_info.num_threads;
+	NN = (sim->Nfstart > sim->Nfdetect ? sim->Nfstart : sim->Nfdetect);
+	fidlen = NN*sim->ntot;
 
 	thrd.fids = (complx**)malloc(num_threads*sizeof(complx*));
 	if (thrd.fids == NULL) {
 		fprintf(stderr,"Error: ups, not even started and already out of memory...\n");
 		exit(1);
 	}
-	for (i=0; i<num_threads; i++) thrd.fids[i] = complx_vector(sim->ntot);
+	for (i=0; i<num_threads; i++) thrd.fids[i] = complx_vector(fidlen);
+
+	if (collect_phivals) {
+		//printf("\nsimpson_common_work will collect phivals\n\n");
+		thrd.phivals = (complx**)malloc(num_threads*sizeof(complx*));
+		if (thrd.phivals == NULL) {
+			fprintf(stderr,"Error: ups, not even started and already out of memory... (phivals)\n");
+			exit(1);
+		}
+		for (i=0; i<num_threads; i++) thrd.phivals[i] = complx_vector(NN);
+	}
 
 	switch (sim->interpolation) {
 	case INTERPOL_NOT_USED: // no interpolation
@@ -1087,18 +1109,26 @@ complx * simpson_common_work(Tcl_Interp *interp, char *state, int *ints_out, dou
 		pthread_barrier_wait(&simpson_b_start);
 		/* harvest results from threads */
 		pthread_barrier_wait(&simpson_b_end);
-		fidsum = complx_vector(sim->ntot);
+		fidsum = complx_vector(fidlen);
 		cv_zero(fidsum);
 		for(i=0; i<num_threads; i++) {
 			cv_multod(fidsum, thrd.fids[i], 1.0);
 			//free_complx_vector(thrd.fids[i]);
+		}
+		if (collect_phivals) {
+			phivals = complx_vector(NN);
+			cv_zero(phivals);
+			for(i=0; i<num_threads; i++) {
+				cv_multod(phivals, thrd.phivals[i], 1.0);
+				//free_complx_vector(thrd.fids[i]);
+			}
 		}
 		break;
 	case INTERPOL_FWT_ALL:
 	case INTERPOL_FWT_LAM: { // FWTinterpolation
 		int iz, iave, irf;
 		double weight;
-		fidsum = complx_vector(sim->ntot);
+		fidsum = complx_vector(fidlen);
 		cv_zero(fidsum);
 		sim_prepare_interpol(sim);
 		// all averaging except powder needs to be serial
@@ -1160,7 +1190,7 @@ complx * simpson_common_work(Tcl_Interp *interp, char *state, int *ints_out, dou
 	case INTERPOL_ASG : { // ASGinterpolation
 		int iz, iave, irf;
 		double weight;
-		fidsum = complx_vector(sim->ntot);
+		fidsum = complx_vector(fidlen);
 		cv_zero(fidsum);
 		sim_prepare_interpol(sim);
 		// initialize nfft library
@@ -1217,7 +1247,7 @@ complx * simpson_common_work(Tcl_Interp *interp, char *state, int *ints_out, dou
 	case INTERPOL_FWTASG_LAM: {// FWTASGinterpolation
 		int iz, iave, irf;
 		double weight;
-		fidsum = complx_vector(sim->ntot);
+		fidsum = complx_vector(fidlen);
 		cv_zero(fidsum);
 		sim_prepare_interpol(sim);
 		// all averaging except powder needs to be serial
@@ -1303,6 +1333,7 @@ complx * simpson_common_work(Tcl_Interp *interp, char *state, int *ints_out, dou
 		ints_out[0] = sim->np;
 		ints_out[1] = sim->ni;
 		ints_out[2] = sim->domain;
+		ints_out[3] = (sim->Nfstart > sim->Nfdetect ? sim->Nfstart : sim->Nfdetect);
 	}
 	if (dbls_out != NULL) {
 		dbls_out[0] = sim->sw;
@@ -1317,8 +1348,13 @@ complx * simpson_common_work(Tcl_Interp *interp, char *state, int *ints_out, dou
 	free(aveweight); aveweight = NULL;
 	for (i=0; i<num_threads; i++) free_complx_vector(thrd.fids[i]);
 	free(thrd.fids);
-
-	return fidsum;
+	if (collect_phivals) {
+		for (i=0; i<num_threads; i++) free_complx_vector(thrd.phivals[i]);
+		free(thrd.phivals);
+	}
+	//return fidsum;
+	*fidsumptr = fidsum;
+	*phivalsptr = phivals;
 }
 
 
@@ -1331,7 +1367,7 @@ void simpson_mpi_slave(Tcl_Interp *interp)
 	int *intmessage = NULL;
 	char *state = NULL;
 	double *dblmessage = NULL;
-	complx *fidsum;
+	complx *fidsum=NULL, *phivals=NULL;
 	int mpirank = glob_info.mpi_rank;
 	int mpisize = glob_info.mpi_size;
 
@@ -1405,10 +1441,16 @@ void simpson_mpi_slave(Tcl_Interp *interp)
 
 		// do the job
 	//printf("DBGinfo: MPIslave %d state:\n%s\n---------\n",glob_info.mpi_rank,state);
-		fidsum = simpson_common_work(interp, state, NULL, NULL);
+		//fidsum = simpson_common_work(interp, state, NULL, NULL);
+		simpson_common_work(interp, state, NULL, NULL, &fidsum, &phivals);
 		// send data to master
-		MPI_Send(fidsum, 2*(LEN(fidsum)+1), MPI_DOUBLE, 0, 0,MPI_COMM_WORLD);
+		MPI_Send(fidsum, 2*(LEN(fidsum)+1), MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
 		free_complx_vector(fidsum);
+		if (OCpar.isinit && OCpar.gradmode) {
+			assert(phivals != NULL);
+			MPI_Send(phivals, 2*(LEN(phival)+1), MPI_DOUBLE, 0, 999, MPI_COMM_WORLD);
+			free_complx_vector(phivals);
+		}
 		free(state);
 	}
 #endif
@@ -1419,10 +1461,11 @@ FD* simpson(Tcl_Interp* interp, int mpirank, int mpisize)
 	// only MPI master should get here
 	assert(mpirank == 0);
 
-	int npnidm[3];
+	int npnidm[4];
 	double swsinten[3];
-	complx *fidsum;
+	complx *fidsum=NULL, *phivals=NULL;
 	FD *fd;
+	int collect_phivals = OCpar.isinit && OCpar.gradmode;
 
 	Tcl_ResetResult(interp);
 	if (Tcl_Eval(interp,"savestate") != TCL_OK) {
@@ -1499,7 +1542,8 @@ FD* simpson(Tcl_Interp* interp, int mpirank, int mpisize)
 	// state will be used later
 #endif
 
-	fidsum = simpson_common_work(interp, state, npnidm, swsinten);
+	//fidsum = simpson_common_work(interp, state, npnidm, swsinten);
+	simpson_common_work(interp, state, npnidm, swsinten, &fidsum, &phivals);
 
 	/* wait for MPI slaves to send their results */
 #ifdef MPI
@@ -1510,6 +1554,15 @@ FD* simpson(Tcl_Interp* interp, int mpirank, int mpisize)
 		cv_multod(fidsum, buffer, 1.0);
 	}
 	free_complx_vector(buffer);
+	if (collect_phivals) {
+		complx *buffer = complx_vector(LEN(phivals));
+		for (i=1; i<mpisize; i++) {
+			MPI_Recv(buffer, 2*(LEN(phivals)+1), MPI_DOUBLE,i,999,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+			/* update global vector with results from each local vector */
+			cv_multod(phivals, buffer, 1.0);
+		}
+		free_complx_vector(buffer);
+	}
 #endif
 
 	/* Master: global vector is now complete */
@@ -1517,8 +1570,33 @@ FD* simpson(Tcl_Interp* interp, int mpirank, int mpisize)
 	cv_muld(fidsum,1.0/swsinten[2]);
 	if (verbose & VERBOSE_PROGRESS) printf("All done!\n");
 
-	fd = FD_data2fd(NULL,fidsum,npnidm[0],npnidm[1],swsinten[0],swsinten[1]);
+	fd = FD_data2fd(NULL,fidsum,npnidm[0],npnidm[1],swsinten[0],swsinten[1],npnidm[3]);
 	if (npnidm[2] == 1) fd->type = FD_TYPE_SPE;
+
+	if (collect_phivals) {
+		assert(phivals != NULL);
+		Tcl_Obj *listobj, *obj;
+		int i;
+		cv_muld(phivals,1.0/swsinten[2]);
+		listobj = Tcl_NewListObj(0,NULL);
+		if (!listobj) {
+			fprintf(stderr,"Error: simpson() unable to create list for phivals\n");
+		}
+		for (i=1; i<=LEN(phivals); i++) {
+			obj = Tcl_NewDoubleObj(phivals[i].re);
+			if (obj == NULL) {
+				fprintf(stderr,"Error: simpson() unable to create obj for phivals\n");
+			}
+			if ( Tcl_ListObjAppendElement(interp,listobj,obj) != TCL_OK ) {
+				fprintf(stderr,"Error: simpson() unable to append phivals element %d\n",i);
+			}
+		}
+		obj = Tcl_SetVar2Ex(interp,"par","_phivals_",listobj,TCL_GLOBAL_ONLY);
+		if (obj == NULL) {
+			fprintf(stderr,"Error: simpson() unable to set par(_phivals_)\n");
+		}
+		free_complx_vector(phivals);
+	}
 
 	free(state);
 	free_complx_vector(fidsum);

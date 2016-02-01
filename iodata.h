@@ -54,7 +54,7 @@ typedef struct _FD {
   int np,ni,type,type1,format,prec;
   double ref,ref1,sw,sw1;
   double sfrq,sfrq1;
-  int rank;
+  int nelem;
 } FD;
 
 
@@ -92,7 +92,7 @@ FD* FD_dup(FD* fd);
 void FD_zero(FD* fd);
 int FD_alloc1ddata(FD* fd);
 
-FD* FD_data2fd(char* file,complx* data,int np,int ni,double sw,double sw1);
+FD* FD_data2fd(char* file,complx* data,int np,int ni,double sw,double sw1,int nelem);
 
 void float_to_bits(float f,char* bits);
 float bits_to_float(char* bits);

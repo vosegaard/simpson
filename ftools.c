@@ -63,17 +63,17 @@ int TclGetDoubleWithUnits(Tcl_Interp* interp,char* value,
   if (*p == 0) {
     factor = 1;
   } else {
-    if (!strcasecmp(p, "hz") && units & UNITS_HZ) {
+    if (!strcasecmp(p, "hz") && (units & UNITS_HZ)) {
       factor = scale*f->np/f->sw;
-    } else if (!strcasecmp(p, "khz") && units & UNITS_KHZ) {
+    } else if (!strcasecmp(p, "khz") && (units & UNITS_KHZ)) {
       factor = scale*1000*f->np/f->sw;
-    } else if (!strcasecmp(p, "ppm") && units & UNITS_PPM) {
+    } else if (!strcasecmp(p, "ppm") && (units & UNITS_PPM)) {
       factor = scale*f->sfrq*f->np/f->sw;
-    } else if (!strcasecmp(p, "s") && units & UNITS_S) {
+    } else if (!strcasecmp(p, "s") && (units & UNITS_S)) {
       factor = f->sw*scale;
-    } else if (!strcasecmp(p, "ms") && units & UNITS_MS) {
+    } else if (!strcasecmp(p, "ms") && (units & UNITS_MS)) {
       factor = f->sw*scale/1.0e3;
-    } else if (!strcasecmp(p, "us") && units & UNITS_US) {
+    } else if (!strcasecmp(p, "us") && (units & UNITS_US)) {
       factor = f->sw*scale/1.0e6;
     } else {
       return TCL_ERROR;
@@ -424,6 +424,10 @@ int fsave_xreim(FD* f,char* fname)
   int i,np;
   complx* data;
   
+  if (f->nelem != 1) {
+	  fprintf(stderr,"Error: fsave_xreim detected multiple fid/spc elements - feature not supported here\n");
+	  exit(1);
+  }
   fp=fopen(fname,"wt");
   if (!fp) {
     sprintf(ferrormsg,"fsave: unable to create file '%s'\n",fname);
@@ -454,7 +458,12 @@ int fsave_xyreim(FD* f,char* fname)
   int i,j,np,ni;
   complx* data;
   double sw1,ref1;
-  
+
+  if (f->nelem != 1) {
+	  fprintf(stderr,"Error: fsave_xyreim detected multiple fid/spc elements - feature not supported here\n");
+	  exit(1);
+  }
+
   fp=fopen(fname,"w");
   if (!fp) {
     sprintf(ferrormsg,"fsave: unable to create file '%s'\n",fname);
@@ -533,8 +542,13 @@ int fsave_xyreim(FD* f,char* fname)
 
 int fsave_gnu2d(FD* f,char* fname,int is_binary)
 {
+	  if (f->nelem != 1) {
+		  fprintf(stderr,"Error: fsave_gnu2d detected multiple fid/spc elements - feature not supported here\n");
+		  exit(1);
+	  }
+
   if (!is_binary) {
-    fsave_xyreim(f,fname);
+	fsave_xyreim(f,fname);
     return 0;
   } else {
   
@@ -651,11 +665,6 @@ int tclFSave(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
     return TclError(interp,"fsave: data set %d was not previously loaded\n",fidN);
 
   f=fd[fidN];
-  /* RA: worker process, ie. processes with rank>0, do not write file */
-  //if (f->rank > 0){
-  //  return 0;
-  //}
-  // ZT: obsolete in new master-slaves format
 
   if (rmn) {
     FD_write_rmn(argv[2], f);
@@ -722,7 +731,7 @@ int fdupzero(int fidN)
   }
   f=FD_dup(fd[fidN]);
   if (!f) return -1;
-  memset(f->data,0,sizeof(complx)*(f->np*(f->ni > 1 ? f->ni : 1)+1));
+  memset(f->data,0,sizeof(complx)*(f->np*(f->ni > 1 ? f->ni : 1)*f->nelem+1));
   return fnew(f);
 }
 
@@ -776,6 +785,9 @@ int tclFZerofill(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
     return TclError(interp,"fzerofill: argument 2 must be integer <np/zerofill upto>");
 
   f=fd[fidN];
+  if (f->nelem != 1)
+	  return TclError(interp,"fzerofill: data set %d has multiple (%d) elements, use fsplit first \n",fidN, f->nelem);
+
   npz=round_2n(npz);
 
   if (argc == 4) {
@@ -839,6 +851,8 @@ int tclFAddlb(ClientData data,Tcl_Interp* interp,int _argc, char *argv[])
   if (fidN < 1 || fidN > nfd || fd[fidN] == NULL)
    return TclError(interp,"faddlb: data set %d was not previously loaded\n",fidN);
   f = fd[fidN];
+  if (f->nelem != 1)
+	  return TclError(interp,"faddlb: data set %d has multiple (%d) elements, use fsplit first \n",fidN, f->nelem);
   
   for (i=4; i<argc;i++) {
     if (!strcmp(argv[i],"-symmetric")) {
@@ -978,6 +992,10 @@ int fsamesize(FD* fd1,FD* fd2)
      strcpy(ferrormsg,"the data sets have different number of data points");
      return 0;
   }
+  if (fd1->nelem != fd2->nelem ) {
+     strcpy(ferrormsg,"the data sets have different number of elements");
+     return 0;
+  }
   if (fabs(fd1->sw-fd2->sw) > 1.0e-5*fabs(fd1->sw)) {
      sprintf(ferrormsg,"the data sets have different spectral-widths (%g) and (%g)",
      fd1->sw, fd2->sw);
@@ -1017,7 +1035,7 @@ int tclFCopy(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
   if (!fsamesize(fd[fidN],fd[fidN2]))
     return TclError(interp,"fcopy: %s\n",ferrormsg);
 
-  memcpy(&(fd[fidN]->data[1]),&(fd[fidN2]->data[1]),sizeof(complx)*(fd[fidN]->np)*(fd[fidN]->ni > 1 ? fd[fidN]->np : 1));
+  memcpy(&(fd[fidN]->data[1]),&(fd[fidN2]->data[1]),sizeof(complx)*(fd[fidN]->np)*(fd[fidN]->ni > 1 ? fd[fidN]->np : 1)*(fd[fidN]->nelem));
   return TCL_OK;
 } 
 
@@ -1078,6 +1096,9 @@ int tclFAddtriangle(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
 
   if (fd[fidN]->ni > 1)
     return TclError(interp,"faddtriangle: command cannot be used for 2D data.");
+
+  if (fd[fidN]->nelem != 1)
+    return TclError(interp,"faddtriangle: command cannot be used for data of multiple elements, use fsplit first.");
 
   if (fd[fidN]->type != FD_TYPE_SPE)
     return TclError(interp,"faddtriangle: command only operates on descriptors of type 'spe'.");
@@ -1193,6 +1214,9 @@ int tclFPhase(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
   if (fidN < 1 || fidN > nfd || fd[fidN] == NULL)
       return TclError(interp,"fphase: data set %d was not previously loaded\n",fidN);
 
+  if (fd[fidN]->nelem != 1)
+    return TclError(interp,"fphase: command cannot be used for data of multiple elements, use fsplit first.");
+
 /*
   if (fd[fidN]->ni > 1)
     return TclError(interp,"fphase: cannot phase 2D data. That is done by the 2D FFT.");
@@ -1285,7 +1309,10 @@ int tclFExtract(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
 
   if (fd[fidN]->ni > 1)
     return TclError(interp,"fextract: cannot extract from 2D data.");
- 
+
+  if (fd[fidN]->nelem != 1)
+    return TclError(interp,"fextract: command cannot be used for data of multiple elements, use fsplit first.");
+
   if (Tcl_GetDouble(interp,argv[2],&xfrom) == TCL_ERROR)
     return TclError(interp,"fextract: argument 2 must be double <frq-from>");
 
@@ -1398,6 +1425,9 @@ int tclFRealrms(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
   if (!fsamesize(fd[fidN],fd[fidN2]))
     return TclError(interp,"frms: %s\n",ferrormsg);
 
+  if ( (fd[fidN]->nelem != 1) || (fd[fidN2]->nelem != 1))
+    return TclError(interp,"frms: command cannot be used for data of multiple elements, use fsplit first.");
+
   f=fd[fidN];
   vec = (complx*) f->data;
   nvec = f->np*(f->ni > 1 ? f->ni : 1);
@@ -1441,6 +1471,8 @@ int tclFRms(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
   if (fidN2 < 1 || fidN2 > nfd || fd[fidN2] == NULL)
     return TclError(interp,"frms: data set %d was not previously loaded\n",fidN);
 
+  if ( (fd[fidN]->nelem != 1) || (fd[fidN2]->nelem != 1))
+    return TclError(interp,"frms: command cannot be used for data of multiple elements, use fsplit first.");
 
   if (!fsamesize(fd[fidN],fd[fidN2]))
     return TclError(interp,"frms: %s\n",ferrormsg);
@@ -1554,6 +1586,8 @@ int tclFAutoscale(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
   if (fidN2 < 1 || fidN2 > nfd || fd[fidN2] == NULL)
     return TclError(interp,"fautoscale: data set %d was not previously loaded\n",fidN);
 
+  if ( (fd[fidN]->nelem != 1) || (fd[fidN2]->nelem != 1))
+    return TclError(interp,"fautoscale: command cannot be used for data of multiple elements, use fsplit first.");
 
   if (!fsamesize(fd[fidN],fd[fidN2]))
     return TclError(interp,"fautoscale: %s\n",ferrormsg);
@@ -1643,6 +1677,9 @@ int tclFInt(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
   if (fd[fidN]->ni > 1)
     return TclError(interp,"fint: cannot integrate 2D data.");
 
+  if ( fd[fidN]->nelem != 1 )
+    return TclError(interp,"fint: command cannot be used for data of multiple elements, use fsplit first.");
+
   f=fd[fidN];
   vec = (complx*) f->data;
   nvec = f->np;
@@ -1683,7 +1720,7 @@ int tclFInt(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
     Tcl_AppendElement(interp,buf);
     Tcl_Free((char *)par2);
   }
-  Tcl_Free(par);
+  Tcl_Free((char *)par);
   return TCL_OK;
 } 
 
@@ -1703,6 +1740,9 @@ int tclFRev(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
 
   if (fidN < 1 || fidN > nfd || fd[fidN] == NULL)
     return TclError(interp,"frev: data set %d was not previously loaded\n",fidN);
+
+  if ( fd[fidN]->nelem != 1 )
+    return TclError(interp,"frev: command cannot be used for data of multiple elements, use fsplit first.");
 
   f=fd[fidN];
   np = f->np;
@@ -1747,6 +1787,9 @@ int tclFZero(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
 
   if (fidN < 1 || fidN > nfd || fd[fidN] == NULL)
     return TclError(interp,"fzero: data set %d was not previously loaded\n",fidN);
+
+  if ( fd[fidN]->nelem != 1 )
+    return TclError(interp,"fzero: command cannot be used for data of multiple elements, use fsplit first.");
 
   f=fd[fidN];
 
@@ -1840,6 +1883,9 @@ int tclFNewnp(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
 
   if (fidN < 1 || fidN > nfd || fd[fidN] == NULL)
     return TclError(interp,"fnewnp: data set %d was not previously loaded\n",fidN);
+
+  if ( fd[fidN]->nelem != 1 )
+    return TclError(interp,"fnewnp: command cannot be used for data of multiple elements, use fsplit first.");
 
 /*
   if (fd[fidN]->ni > 1)
@@ -2007,6 +2053,9 @@ int tclFSet(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
   if (fidN < 1 || fidN > nfd || fd[fidN] == NULL)
     return TclError(interp,"fset: data set %d was not previously loaded\n",fidN);
 
+  if ( fd[fidN]->nelem != 1 )
+    return TclError(interp,"fset: command cannot be used for data of multiple elements, use fsplit first.");
+
   f=fd[fidN];
   
   for (ac=2;ac<argc;ac += 2) {
@@ -2059,7 +2108,7 @@ int tclFGet(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
   int fidN;
 
   if (argc != 3)
-    return TclError(interp,"Usage: <result> fget <data set> [-ref | -sw | -np | -ni | -sw1 | -ref1 | -type]");
+    return TclError(interp,"Usage: <result> fget <data set> [-ref | -sw | -np | -ni | -sw1 | -ref1 | -type | -nelem]");
 
   if (Tcl_GetInt(interp,argv[1],&fidN) == TCL_ERROR) 
     return TclError(interp,"fget: argument 1 must be integer <data set>");
@@ -2079,6 +2128,8 @@ int tclFGet(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
     TclSetResult(interp,"%d",fd[fidN]->np);
   } else if (!strcmp(argv[2],"-ni")) {
     TclSetResult(interp,"%d",fd[fidN]->ni);
+  } else if (!strcmp(argv[2],"-nelem")) {
+    TclSetResult(interp,"%d",fd[fidN]->nelem);
   } else if (!strcmp(argv[2],"-type")) {
      if (fd[fidN]->type == FD_TYPE_SPE)      
        TclSetResult(interp,"spe");
@@ -2129,7 +2180,7 @@ int tclFIndex(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
   }
 
   np=fd[fidN]->np;
-  if (ii2==0 && fd[fidN]->ni>1) np *= fd[fidN]->ni;
+  if (ii2==0) np *= (fd[fidN]->ni > 1 ? fd[fidN]->ni : 1)*(fd[fidN]->nelem); // single index to access whole data vector
 
   if (indx < 1 || indx > np)
     return TclError(interp,"findex: argument %d out of range (%d is not between 1 and %d)",
@@ -2137,8 +2188,9 @@ int tclFIndex(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
   if ((ii2 > 0) && (indx2 < 1 || indx2 > fd[fidN]->ni))
     return TclError(interp,"findex: argument %d out of range (%d is not between 1 and %d)",
       ii2,indx2,fd[fidN]->ni);
-  
-  if (ii2 > 0) indx += (indx2-1)*fd[fidN]->np;
+  if (ii2>0 && fd[fidN]->nelem != 1)
+	  return TclError(interp,"findex: two-indices based reference used on multiple elements data - feature not supported");
+  if (ii2 > 0) indx += (indx2-1)*fd[fidN]->np; // two indices, np and ni, were given
   val=((complx*)(fd[fidN]->data))[indx];
 
   /* ZT: originally was like this:
@@ -2187,6 +2239,9 @@ int tclFX(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
   if (fd[fidN]->ni > 1)
     return TclError(interp,"fx: cannot operate on 2D data.");
 
+  if (fd[fidN]->nelem != 1)
+    return TclError(interp,"fx: cannot operate on multiple element data, use fsplit first.");
+
   if (Tcl_GetInt(interp,argv[2],&indx) == TCL_ERROR) 
     return TclError(interp,"fx: argument 2 must be integer <point-number>");
 
@@ -2220,6 +2275,9 @@ int tclFSetIndex(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
 
   if (fidN < 1 || fidN > nfd || fd[fidN] == NULL)
     return TclError(interp,"fsetindex: data set %d was not previously loaded\n",fidN);
+
+  if (fd[fidN]->nelem != 1)
+    return TclError(interp,"fsetindex: cannot operate on multiple element data");
 
   if (Tcl_GetInt(interp,argv[2],&indx) == TCL_ERROR) 
     return TclError(interp,"fsetindex: argument 2 must be integer <point-number>");
@@ -2325,7 +2383,10 @@ int tclFFt(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
 
   if (fidN < 1 || fidN > nfd || fd[fidN] == NULL)
     return TclError(interp,"fft: data set %d was not previously loaded\n",fidN);
-    
+
+  if (fd[fidN]->nelem != 1)
+    return TclError(interp,"fft: cannot operate on multiple element data, use fsplit first.");
+
   f=fd[fidN];
 
   if (argc == 3 || argc == 2) { 
@@ -2409,7 +2470,10 @@ int tclFFt1d(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
 
   if (fidN < 1 || fidN > nfd || fd[fidN] == NULL)
     return TclError(interp,"fft1d: data set %d was not previously loaded\n",fidN);
-    
+
+  if (fd[fidN]->nelem != 1)
+    return TclError(interp,"fft1d: cannot operate on multiple element data, use fsplit first.");
+
   f=fd[fidN];
 
   if (!check_2n(f->np))
@@ -2454,7 +2518,10 @@ int tclFTranspose(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
 
   if (fidN < 1 || fidN > nfd || fd[fidN] == NULL)
     return TclError(interp,"ftranspose: data set %d was not previously loaded\n",fidN);
-    
+
+  if (fd[fidN]->nelem != 1)
+    return TclError(interp,"ftranspose: cannot operate on multiple element data, use fsplit first.");
+
   f=fd[fidN];
 
   if (f->ni < 2) 
@@ -2538,6 +2605,9 @@ int tclFAddpeaks(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
 
   if (fidN < 1 || fidN > nfd || fd[fidN] == NULL) 
     return TclError(interp,"faddpeaks: data set %d was not previously loaded\n",fidN);
+
+  if (fd[fidN]->nelem != 1)
+    return TclError(interp,"faddpeaks: cannot operate on multiple element data, use fsplit first.");
 
   if (fd[fidN]->ni > 1)
     return tclFAddpeaks2D(data,interp,argc,argv);
@@ -2662,6 +2732,9 @@ int tclFAddpeaks2D(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
 
   if (fidN < 1 || fidN > nfd || fd[fidN] == NULL) 
     return TclError(interp,"faddpeaks: data set %d was not previously loaded\n",fidN);
+
+  if (fd[fidN]->nelem != 1)
+    return TclError(interp,"faddpeaks: cannot operate on multiple element data, use fsplit first.");
 
   if (Tcl_GetDouble(interp,argv[2],&cutoff) != TCL_OK)  
     return TclError(interp,"faddpeaks: unable to convert '%s' in argument 2 to a cutoff value\n",argv[2]);
@@ -2788,6 +2861,9 @@ int tclFFindPeaks(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
   if (fd[fidN]->ni > 1)
     return TclError(interp,"ffindpeaks: cannot operate on 2D data.");
 
+  if (fd[fidN]->nelem != 1)
+    return TclError(interp,"ffindpeaks: cannot operate on multiple element data, use fsplit first.");
+
   np=fd[fidN]->np;
   sw=fd[fidN]->sw;
   dat=(complx*)(fd[fidN]->data);
@@ -2898,6 +2974,9 @@ int tclFMaxheight(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
   if (fidN < 1 || fidN > nfd || fd[fidN] == NULL) 
     return TclError(interp,"fmaxheight: data set %d was not previously loaded\n",fidN);
 
+  if (fd[fidN]->nelem != 1)
+    return TclError(interp,"fmaxheiht: cannot operate on multiple element data, use fsplit first.");
+
   f= fd[fidN];
   np=f->np;
   ni=f->ni;
@@ -2974,7 +3053,7 @@ int tclFAdd(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
   if (!fsamesize(fd[fidN],fd[fidN2])) 
     return TclError(interp,"fadd: %s\n",ferrormsg);
 
-  np=fd[fidN]->np*(fd[fidN]->ni > 1 ? fd[fidN]->ni : 1);
+  np=fd[fidN]->np*(fd[fidN]->ni > 1 ? fd[fidN]->ni : 1)*(fd[fidN]->nelem);
   v1=(complx*)(fd[fidN]->data);
   v2=(complx*)(fd[fidN2]->data);
   for (i=1;i<=np;i++) {
@@ -3009,7 +3088,7 @@ int tclFSub(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
   if (!fsamesize(fd[fidN],fd[fidN2])) 
     return TclError(interp,"fsub: %s\n",ferrormsg);
 
-  np=fd[fidN]->np*(fd[fidN]->ni > 1 ? fd[fidN]->ni : 1);
+  np=fd[fidN]->np*(fd[fidN]->ni > 1 ? fd[fidN]->ni : 1)*(fd[fidN]->nelem);
   v1=(complx*)(fd[fidN]->data);
   v2=(complx*)(fd[fidN2]->data);
   for (i=1;i<=np;i++) {
@@ -3127,6 +3206,9 @@ int tclFBc(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
   if (Tcl_SplitList(interp,argv[3],&npar,&par) != TCL_OK) 
     return TclError(interp,"fbc: list is not formed correctly\n");
 
+  if (fd[fidN]->nelem != 1)
+    return TclError(interp,"fbc: cannot operate on multiple element data, use fsplit first.");
+
   f=fd[fidN];
   np=f->np;
   dat=(complx*)f->data;
@@ -3190,6 +3272,9 @@ int tclFSmooth(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
 
   if (fd[fidN]->ni > 1)
     return TclError(interp,"fsmooth: cannot operate on 2D data.");
+
+  if (fd[fidN]->nelem != 1)
+    return TclError(interp,"fsmooth: cannot operate on multiple element data, use fsplit first.");
 
   if (Tcl_GetInt(interp,argv[2],&pnt) == TCL_ERROR) 
     return TclError(interp,"fsmooth: argument 2 must be integer <points [16]>");
@@ -3260,6 +3345,9 @@ int tclFSsbint(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
 
   if (fidN < 1 || fidN > nfd || fd[fidN] == NULL)
     return TclError(interp,"fssbint: data set %d was not previously loaded\n",fidN);
+
+  if (fd[fidN]->nelem != 1)
+    return TclError(interp,"fssbint: cannot operate on multiple element data, use fsplit first.");
 
 
   f=fd[fidN];
@@ -3490,7 +3578,10 @@ int tclFPlot2d(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
 
   if (fidN < 1 || fidN > nfd || fd[fidN] == NULL)
     return TclError(interp,"fplot2d: data set %d was not previously loaded\n",fidN);
-    
+
+  if (fd[fidN]->nelem != 1)
+    return TclError(interp,"fplot2d: cannot operate on multiple element data, use fsplit first.");
+
   f=fd[fidN];
 
   if (f->ni <= 0)
@@ -3542,6 +3633,8 @@ int tclFReconstruct(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
   if (f->ni > 1)
     return TclError(interp,"%s: input data must be 1d",
       argv[0]);
+  if (fd[fidN]->nelem != 1)
+    return TclError(interp,"%s: cannot operate on multiple element data, use fsplit first.",argv[0]);
 
   if (!strcmp(argv[2],"-horizontal")) mode=R_HORZ;
   else if (!strcmp(argv[2],"-vertical")) mode=R_VERT;
@@ -3675,9 +3768,13 @@ int tclFCompare(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
     return TclError(interp,"%s: argument 2 must be integer <data set>",
       argv[0]);
 
-  if (fidN1 < 1 || fidN2 > nfd || fd[fidN2] == NULL)
+  if (fidN2 < 1 || fidN2 > nfd || fd[fidN2] == NULL)
     return TclError(interp,"%s: data set %d was not previously loaded\n",
       argv[0],fidN2);
+
+  if (fd[fidN1]->nelem != 1 || fd[fidN2]->nelem != 1)
+    return TclError(interp,"%s: cannot operate on multiple element data, use fsplit first.",argv[0]);
+
   f2=fd[fidN2];
   i = (f1->ni>1) ? f1->ni*f1->np:f1->np;
   
@@ -3764,9 +3861,13 @@ int tclFCovariance(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
     return TclError(interp,"%s: argument 2 must be integer <data set>",
       argv[0]);
 
-  if (fidN1 < 1 || fidN2 > nfd || fd[fidN2] == NULL)
+  if (fidN2 < 1 || fidN2 > nfd || fd[fidN2] == NULL)
     return TclError(interp,"%s: data set %d was not previously loaded\n",
       argv[0],fidN2);
+
+  if (fd[fidN1]->nelem != 1 || fd[fidN2]->nelem != 1)
+    return TclError(interp,"%s: cannot operate on multiple element data, use fsplit first.",argv[0]);
+
   f2=fd[fidN2];
   i = (f1->ni>1) ? f1->ni*f1->np:f1->np;
   
@@ -3809,6 +3910,9 @@ int tclFCovariance(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
     }
   } else {
     /* horizontal projection */
+    f=FD_alloc();
+	if (!f)
+	   return TclError(interp,"fcreate: unable to allocate fid data set data structure\n");
     f->np = f1->ni;
     f->sw = f1->sw1;
     f->ref = f1->ref1;
@@ -3860,11 +3964,75 @@ int tclFAbs(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
     
   f=fd[fidN];
   
-  n = f->np * (f->ni > 0 ? f->ni:1);
+  n = f->np * (f->ni > 0 ? f->ni:1) * f->nelem;
   for (i=1;i<=n;i++) {f->data[i].re = sqrt(f->data[i].re*f->data[i].re+f->data[i].im*f->data[i].im); f->data[i].im = 0;}
   return TCL_OK;
 }
 
+int tclFSplit(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
+{
+  int fidN, fidNnew, i, len;
+  char buf1[16], buf2[128];
+  FD *f, *fn;
+  Tcl_Obj *result, *obj;
+
+  if (argc != 2)
+    return TclError(interp,"Usage: <list of data descriptors> fsplit <data descriptor>");
+
+  if (Tcl_GetInt(interp,argv[1],&fidN) == TCL_ERROR)
+    return TclError(interp,"fsplit: argument 1 must be integer <data set>");
+
+  if (fidN < 1 || fidN > nfd || fd[fidN] == NULL)
+    return TclError(interp,"fsplit: data set %d was not previously loaded\n",fidN);
+
+  if ( fd[fidN]->nelem <= 1 )
+    return TclError(interp,"fsplit: command cannot be used for data of single elements (NELEM = %d)",fd[fidN]->nelem);
+
+  /* create list objects */
+  result = Tcl_NewListObj(0,NULL);
+  if (!result) return TclError(interp,"fsplit unable to create output list");
+
+  f = fd[fidN];
+  len = f->np*(f->ni > 1 ? f->ni : 1);
+  for (i=0; i<f->nelem; i++) {
+	  fn = FD_alloc();
+	  if (!fn)
+	    return TclError(interp,"fsplit: unable to allocate data set for element %d\n",i+1);
+	  fn->np = f->np;
+	  fn->ni = f->ni;
+	  fn->nelem = 1;
+	  fn->type = f->type;
+	  fn->format = f->format;
+	  fn->prec = f->prec;
+	  fn->ref = f->ref;
+	  fn->ref1 = f->ref1;
+	  fn->sw = f->sw;
+	  fn->sw1 = f->sw1;
+	  FD_alloc1ddata(fn);
+	  memcpy(fn->data+1,f->data+1+i*len,sizeof(complx)*len);
+	  fidNnew = fnew(fn);
+	  if (fidNnew == -1)
+		  return TclError(interp,"fsplit: unable to create data set for element %d\n (previous error: %s)",i+1,ferrormsg);
+
+	  obj = Tcl_NewIntObj(fidNnew);
+	  if (!obj) {
+		  return TclError(interp,"fsplit unable to create int from data set of element %d",i+1);
+	  }
+	  if ( Tcl_ListObjAppendElement(interp,result,obj) != TCL_OK ) {
+		  return TclError(interp,"fsplit unable to append element %d to output list\n(previous error: %s)",i+1, Tcl_GetStringResult(interp));
+	  }
+
+	  sprintf(buf1, "%d", fidNnew);
+	  sprintf(buf2, "%ld", (long)fd[fidNnew]);
+	  Tcl_Eval(interp,"namespace eval FD {variable f}");
+	  Tcl_SetVar2(interp,"FD::f",buf1,buf2,TCL_GLOBAL_ONLY|TCL_LEAVE_ERR_MSG);
+	  Tcl_SetVar2(interp,"FD_Internal",buf1,buf2,TCL_GLOBAL_ONLY|TCL_LEAVE_ERR_MSG);
+
+  }
+
+  Tcl_SetObjResult(interp,result);
+  return TCL_OK;
+}
 
 
 
@@ -3909,13 +4077,11 @@ void tclcmd_ftools(Tcl_Interp* interp)
   Tcl_CreateCommand(interp,"faddtriangle",(Tcl_CmdProc *)tclFAddtriangle,(ClientData)NULL,(Tcl_CmdDeleteProc*)NULL);
   Tcl_CreateCommand(interp,"freconstruct",(Tcl_CmdProc *)tclFReconstruct,(ClientData)NULL,(Tcl_CmdDeleteProc*)NULL);
   Tcl_CreateCommand(interp,"fcompare",(Tcl_CmdProc *)tclFCompare,(ClientData)NULL,(Tcl_CmdDeleteProc*)NULL);
-
   Tcl_CreateCommand(interp,"fnewnp",(Tcl_CmdProc *)tclFNewnp,(ClientData)NULL,(Tcl_CmdDeleteProc*)NULL);
-
   Tcl_CreateCommand(interp,"fread",(Tcl_CmdProc *)tclFRead,(ClientData)NULL,(Tcl_CmdDeleteProc*)NULL);
-
   Tcl_CreateCommand(interp,"fft1d",(Tcl_CmdProc *)tclFFt1d,(ClientData)NULL,(Tcl_CmdDeleteProc*)NULL);
   Tcl_CreateCommand(interp,"ftranspose",(Tcl_CmdProc *)tclFTranspose,(ClientData)NULL,(Tcl_CmdDeleteProc*)NULL);
+  Tcl_CreateCommand(interp,"fsplit",(Tcl_CmdProc *)tclFSplit,(ClientData)NULL,(Tcl_CmdDeleteProc*)NULL);
 
 
 /* Must find replacement for numerical recipes code to work */

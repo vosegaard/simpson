@@ -44,6 +44,7 @@ void update_propagator(blk_mat_complx *U, blk_mat_complx *dU, Sim_info *sim, Sim
 void blk_prop_real(blk_mat_complx *U, blk_mat_double *ham, double duration, Sim_info *sim);
 void blk_prop_complx(blk_mat_complx *U, mat_complx *ham, double duration, Sim_info *sim);
 void blk_prop_complx_2(blk_mat_complx *U, mat_complx *mtx, double dur, int propmethod);
+void blk_prop_complx_3(blk_mat_complx *U, blk_mat_complx *ham, double dur, Sim_info *sim);
 void blk_dm_multod_extract(blk_mat_double *blkm, mat_double *dm, double dval);
 void blk_cm_multod_extract(blk_mat_complx *blkm, mat_complx *dm, double dval);
 void blk_simtrans_zrot2(blk_mat_complx *U, mat_double *sumUph);

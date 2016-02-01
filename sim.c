@@ -78,6 +78,7 @@ int obs_nuc(SpinSys* ss, char* det,int* was_all)
           exit(1);
         }
         iso2 = ss_isotope(ss,nuc2)->number;
+        if (det[i] == 'z' || det[i] == 'a' || det[i] == 'b') continue;
         if (nuc == 0) {
           nuc=nuc2;
           iso=iso2;
@@ -96,7 +97,7 @@ Sim_info * sim_initialize(Tcl_Interp* interp)
   double f;
   Sim_info * s;
   Tcl_Obj *obj, **objv;
-  int i, objc;
+  int i, NN, objc;
 
   s = (Sim_info*)malloc(sizeof(Sim_info));
   if (!s) {
@@ -142,6 +143,7 @@ Sim_info * sim_initialize(Tcl_Interp* interp)
   }
   s->sw=TclGetDouble(interp,"par","sw",0,s->wr);
   s->sw1=TclGetDouble(interp,"par","sw1",0,0);
+  s->np=TclGetInt(interp,"par","np",0,1);
   s->ni=TclGetInt(interp,"par","ni",0,0);
 
   // read and decompose par(method)
@@ -265,9 +267,6 @@ Sim_info * sim_initialize(Tcl_Interp* interp)
     exit(1);
   }
 
-  s->np=TclGetInt(interp,"par","np",0,1);
-  s->ntot=s->np*(s->ni > 1 ? s->ni : 1);
-
   s->realspec=TclGetInt(interp,"par","real_spec",0,0);
 
   //TclGetString(interp,s->crystfile,"par","crystal_file",0,"alpha0beta90");
@@ -346,9 +345,7 @@ Sim_info * sim_initialize(Tcl_Interp* interp)
 	  // at the moment they are read in mpi_ASG_interpol ...
   }
 
-  TclGetString(interp,detectop,"par","detect_operator",0,"Inp");
   TclGetString(interp,s->rfproffile,"par","rfprof_file",0,"none");
-  TclGetString(interp,startop,"par","start_operator",0,"Inz");
   TclGetString(interp,pulseq,"par","pulse_sequence",0,"pulseq");
   strcpy(s->pulsename, pulseq);
 
@@ -360,69 +357,180 @@ Sim_info * sim_initialize(Tcl_Interp* interp)
   }
 
   readsys(interp,s);
-
   s->matdim=s->ss->matdim;
-  s->fdetect = ss_readoper(s,detectop);
-  if (s->fdetect == NULL) {
-     fprintf(stderr,"error: unable to interpret detect operator '%s'\n",detectop);
-     exit(1);
+
+//  TclGetString(interp,startop,"par","start_operator",0,"Inz");
+  obj = Tcl_GetVar2Ex(interp,"par","start_operator",TCL_GLOBAL_ONLY);
+  if (obj == NULL) {  // default value is Inz
+	  obj = Tcl_NewStringObj("Inz",3);
+	  obj = Tcl_SetVar2Ex(interp,"par","start_operator",obj,TCL_GLOBAL_ONLY);
+	  if (obj == NULL) {
+		  fprintf(stderr,"Error when setting 'par(start_operator)':\n%s\n",Tcl_GetStringResult(interp));
+		  exit(1);
+	  }
   }
-  if (!strncmp(startop,"equil",5)) {
-     s->fstart = ss_eq_sigma(s);
-  } else {
-     s->fstart = ss_readoper(s,startop);
+  if (Tcl_ListObjGetElements(interp, obj, &objc, &objv) != TCL_OK) {
+	  fprintf(stderr,"Error: sim_initialize cannot decompose list par(start_operator):\n%s\n",Tcl_GetStringResult(interp));
+	  exit(1);
   }
-  if (s->fstart == NULL) {
-     fprintf(stderr,"error: unable to interpret start operator '%s'\n",startop);
-     exit(1);
+  if (objc < 1) {
+	  fprintf(stderr,"Error: par(start_operator) must not be empty\n");
+	  exit(1);
   }
-  /* conjugate_fid: This parameter is used overrule the automatic detection of the magnetogyric
-    ratio for the observable nucleus. It can be set to 'auto', 'true' or 'false.
-  */
-  TclGetString(interp,buf,"par","conjugate_fid",0,"auto");
-  if (!strcmp(buf,"auto")) {
-    int was_all=0;
-    s->obs_nuc = obs_nuc(s->ss,detectop,&was_all);
-    if ( (s->obs_nuc < 1) || (was_all && s->ss->nchan > 1) ) {
-      fprintf(stderr,"error: in detect-operator '%s'. More than one type of nucleus\n"
-                     "was detected. Set 'conjugate_fid' to 'true' or 'false' to turn off\n"
-                     "this sanity check. 'conjugate_fid' is 'auto' per default which conjugates\n"
-                     "the fid if the gyromagnetic ratio is larger than zero for the observable\n" 
-                     "nucleus. That corrects for the standard axis convention of plotting spectra\n"
-                     "that ignores the sign of gamma.\n"
-                     ,detectop);
-      exit(1);
-    }
-    s->conjugate_fid=  (ss_gamma(s->ss,s->obs_nuc) > 0 ? 1 : 0);
-  } else if (!strcmp(buf,"true")) {
-    s->conjugate_fid = 1;
-  } else if (!strcmp(buf,"false")) {
-    s->conjugate_fid = 0;
-  } else {
-    fprintf(stderr,"error: 'conjugate_fid' must be 'true', 'false' or 'auto'");
-    exit(1);
+  s->Nfstart = objc;
+  s->fstart = (mat_complx**)malloc(s->Nfstart*sizeof(mat_complx*));
+  for (i=0; i<objc; i++) {
+	  strcpy(startop,Tcl_GetString(objv[i]));
+	  if (!strncmp(startop,"equil",5)) {
+		  s->fstart[i] = ss_eq_sigma(s);
+	  } else {
+		  s->fstart[i] = ss_readoper(s,startop);
+	  }
+	  if (s->fstart[i] == NULL) {
+		  fprintf(stderr,"error: unable to interpret start operator '%s' (element %d)\n",startop,i+1);
+		  exit(1);
+	  }
+	  if (verbose & VERBOSE_OPER) {
+		  if (objc == 1) {
+			  sprintf(buf,"Start operator '%s'",startop);
+		  } else {
+			  sprintf(buf,"Start operator element %d: '%s'",i+1,startop);
+		  }
+		  cm_print(s->fstart[i],buf);
+	  }
   }
 
-  if (verbose & VERBOSE_OPER) {
-    printf("Acquisition data will%s be complex conjugated.\n",
-       (s->conjugate_fid ? "" : " not"));
-  }
+  //  TclGetString(interp,detectop,"par","detect_operator",0,"Inp");
+    obj = Tcl_GetVar2Ex(interp,"par","detect_operator",TCL_GLOBAL_ONLY);
+    if (obj == NULL) {  // default value is Inp
+  	  obj = Tcl_NewStringObj("Inp",3);
+  	  obj = Tcl_SetVar2Ex(interp,"par","detect_operator",obj,TCL_GLOBAL_ONLY);
+  	  if (obj == NULL) {
+  		  fprintf(stderr,"Error when setting 'par(detect_operator)':\n%s\n",Tcl_GetStringResult(interp));
+  		  exit(1);
+  	  }
+    }
+    if (Tcl_ListObjGetElements(interp, obj, &objc, &objv) != TCL_OK) {
+    	fprintf(stderr,"Error: sim_initialize cannot decompose list par(detect_operator):\n%s\n",Tcl_GetStringResult(interp));
+    	exit(1);
+    }
+    if (objc < 1) {
+  	  fprintf(stderr,"Error: par(detect_operator) must not be empty\n");
+  	  exit(1);
+    }
+    s->Nfdetect = objc;
+    s->fdetect = (mat_complx**)malloc(s->Nfdetect*sizeof(mat_complx*));
+    s->obs_nuc = (int*)malloc(s->Nfdetect*sizeof(int));
+    s->conjugate_fid = (int*)malloc(s->Nfdetect*sizeof(int));
+    /* conjugate_fid: This parameter is used overrule the automatic detection of the magnetogyric
+      ratio for the observable nucleus. It can be set to 'auto', 'true' or 'false.
+    */
+    TclGetString(interp,buf,"par","conjugate_fid",0,"auto");
+    if (!strcmp(buf,"auto")) {
+    	NN = -1;
+    } else if (!strcmp(buf,"true")) {
+        NN = 1;
+    } else if (!strcmp(buf,"false")) {
+        NN = 0;
+    } else {
+        fprintf(stderr,"error: 'conjugate_fid' must be 'true', 'false' or 'auto'");
+        exit(1);
+    }
+    for (i=0; i<s->Nfdetect; i++) s->conjugate_fid[i] = NN;
+    for (i=0; i<objc; i++) {
+    	strcpy(detectop,Tcl_GetString(objv[i]));
+    	s->fdetect[i] = ss_readoper(s,detectop);
+    	if (s->fdetect[i] == NULL) {
+    		fprintf(stderr,"error: unable to interpret detect operator '%s' (element %d)\n",detectop,i+1);
+    		exit(1);
+    	}
+    	NN = 0;
+    	if (s->conjugate_fid[i] == -1) {
+    		s->obs_nuc[i] = obs_nuc(s->ss,detectop,&NN);
+    		if ( (s->obs_nuc[i] < 1) || (NN && s->ss->nchan > 1) ) {
+    			fprintf(stderr,"error: in detect-operator '%s'. \nNone or more than one type of nucleus was detected. \n"
+    					"Set 'conjugate_fid' to 'true' or 'false' to turn off\n"
+    					"this sanity check. 'conjugate_fid' is 'auto' per default which conjugates\n"
+    					"the fid if the gyromagnetic ratio is larger than zero for the observable\n"
+    					"nucleus. That corrects for the standard axis convention of plotting spectra\n"
+    					"that ignores the sign of gamma.\n",detectop);
+    			exit(1);
+    		}
+    		s->conjugate_fid[i] = (ss_gamma(s->ss,s->obs_nuc[i]) > 0 ? 1 : 0);
+    	} else {
+    		s->obs_nuc[i] = 0;
+    	}
+    	if (s->frame == LABFRAME) { // obs_nuc is needed for LABFRAME
+    		s->obs_nuc[i] = obs_nuc(s->ss,detectop,&NN);
+    		if ( (s->obs_nuc[i] < 1) || (NN && s->ss->nchan > 1) ) {
+    			fprintf(stderr,"error: in LABFRAME detect-operator '%s'. None or more than one type of nucleus was detected. \n" ,detectop);
+    			exit(1);
+    		}
+    	}
+
+    	//if (OCpar.isinit != 1) {
+    	//	s->obs_nuc[i] = obs_nuc(s->ss,detectop,&NN);
+    	//	printf("obs_nuc result from '%s': %d\n", detectop, s->obs_nuc[i]); exit(1);
+    	//} // this is omitted for Optimal control, anything is allowed as detectop
+    	//if ( (s->obs_nuc[i] < 1) || (NN && s->ss->nchan > 1) ) {
+    	//	fprintf(stderr,"error: in detect-operator '%s'. More than one type of nucleus was detected. \n" ,detectop);
+    	//	exit(1);
+    	//}
+    	//if (s->conjugate_fid[i] == -1) s->conjugate_fid[i]=(ss_gamma(s->ss,s->obs_nuc[i]) > 0 ? 1 : 0);
+
+    	if (verbose & VERBOSE_OPER) {
+    		if (objc == 1) {
+    			sprintf(buf,"Detect operator '%s'",detectop);
+    		} else {
+    			sprintf(buf,"Detect operator element %d: '%s'",i+1,detectop);
+    		}
+    		cm_print(s->fdetect[i],buf);
+    		printf("Acquisition data will%s be complex conjugated.\n",(s->conjugate_fid ? "" : " not"));
+    	}
+    }
+
+    /* check numbers of start/detect operators */
+    if (s->Nfstart != 1 && s->Nfdetect != 1) {
+    	if (s->Nfstart != s->Nfdetect) {
+    		fprintf(stderr,"Error: unsupported numbers of start/detect operators (%d/%d)\n"
+    				       "       can be (1/x) or (x/1) or (x/x)\n",s->Nfstart,s->Nfdetect);
+    		exit(1);
+    	}
+    }
+    /* Total length of FID is np*ni*max(Nfstart,Nfdetect)
+     * => multiple start/detect are concatenated in FID
+     * but ntot is the length of individual FID
+     */
+    s->ntot=s->np*(s->ni > 1 ? s->ni : 1);
+
+    // issue error when interpolation and multiple fstart/fdetect
+    if (s->interpolation != INTERPOL_NOT_USED) {
+  	  if (s->Nfstart != 1 || s->Nfdetect != 1) {
+  		  fprintf(stderr,"Error: Interpolation can not be used when using multiple start/detect operators. Feature not implemented\n");
+  		  exit(1);
+  	  }
+    }
 
   // Excitation-Detection symmetry check
   //  1 ... assume there is ED symmetry
   //  0 ... force internal check on ED symmetry
   // -1 ... no ED symmetry, no internal check
   s->EDsymmetry = TclGetInt(interp,"par","ED_symmetry",0,-1);
-  if (s->EDsymmetry == 0) s->EDsymmetry = is_rhosymmetry(s->fstart,s->fdetect);
   if (abs(s->EDsymmetry)>1) {
 	  fprintf(stderr,"Error: ED_symmetry parameter has wrong value (can be -1, 0, 1)\n");
 	  exit(1);
   }
+  if (s->EDsymmetry != -1) {
+	  if (s->Nfstart != 1 || s->Nfdetect != 1) {
+		  fprintf(stderr,"Error: ED_symmetry can not be used when using multiple start/detect operators. Feature not implemented\n");
+		  exit(1);
+	  }
+  }
+  if (s->EDsymmetry == 0) {
+	  s->EDsymmetry = is_rhosymmetry(s->fstart[0],s->fdetect[0]);
+  }
   //printf("ED symmetry is %d\n",s->EDsymmetry);
-
   if (verbose & VERBOSE_OPER) {
-     cm_print(s->fstart,"Start operator");
-     cm_print(s->fdetect,"Detect operator");
      printf("Excitation-Detection symmetry: ");
      if (s->EDsymmetry < 0)
     	 printf("not assumed\n");
@@ -609,9 +717,17 @@ void sim_destroy(Sim_info* s, int this_is_copy)
   free(s->HF);
 
   DEBUGPRINT("SIM_DESTROY 7\n");
-  if (s->fstart) free_complx_matrix(s->fstart);
+  for (i=0; i<s->Nfstart; i++) {
+	  if (s->fstart[i]) free_complx_matrix(s->fstart[i]);
+  }
+  free(s->fstart);
   DEBUGPRINT("SIM_DESTROY 8\n");
-  if (s->fdetect) free_complx_matrix(s->fdetect);
+  for (i=0; i<s->Nfdetect; i++) {
+	  if (s->fdetect[i]) free_complx_matrix(s->fdetect[i]);
+  }
+  free(s->fdetect);
+  free(s->obs_nuc);
+  free(s->conjugate_fid);
   DEBUGPRINT("SIM_DESTROY 9\n");
 
   /* new Hamiltonian assembling */
@@ -712,255 +828,10 @@ void sim_destroy(Sim_info* s, int this_is_copy)
 
 }
 
-/****
- * decided NOT to use this anymore - NOT UPDATED!!!!
- *
-Sim_info * sim_duplicate(Sim_info *sim)
-{
-	int i, j;
-
-	Sim_info * sim2 = (Sim_info*)malloc(sizeof(Sim_info));
-	if (sim2 == NULL) {
-		fprintf(stderr,"Error: sim_duplicate - can not allocate Sim_info structure\n");
-		exit(1);
-	}
-	sim2->nCS = sim->nCS;
-	sim2->nDD = sim->nDD;
-	sim2->nJ = sim->nJ;
-	sim2->nQ = sim->nQ;
-	sim2->nMIX = sim->nMIX;
-	sim2->specfreq = sim->specfreq;
-	sim2->wr = sim->wr;
-	sim2->sw = sim->sw;
-	sim2->sw1 = sim->sw1;
-	sim2->brl = sim->brl;
-	sim2->gamma_zero = sim->gamma_zero;
-	sim2->np = sim->np;
-	sim2->ni = sim->ni;
-	sim2->ntot = sim->ntot;
-	sim2->ngamma = sim->ngamma;
-	sim2->matdim = sim->matdim;
-	sim2->obs_nuc = sim->obs_nuc;
-	sim2->imethod = sim->imethod;
-	sim2->crystfile_from = sim->crystfile_from;
-	sim2->crystfile_to = sim->crystfile_to;
-	sim2->acq_adjoint = sim->acq_adjoint;
-	sim2->dipole_check = sim->dipole_check;
-	sim2->realspec = sim->realspec;
-	sim2->sparse = sim->sparse;
-	sim2->conjugate_fid = sim->conjugate_fid;
-	sim2->EDsymmetry = sim->EDsymmetry;
-	sim2->Hint_isdiag = sim->Hint_isdiag;
-	sim2->averaging = sim->averaging;
-	sim2->block_diag = sim->block_diag;
-	sim2->dor = sim->dor;
-	sim2->brl1 = sim->brl1;
-	sim2->brl2 = sim->brl2;
-	sim2->wr1 = sim->wr1;
-	sim2->wr2 = sim->wr2;
-	sim2->relax = sim->relax;
-	sim2->propmethod = sim->propmethod;
-	sim2->interpolation = sim->interpolation;
-	//sim2->dw = sim->dw;
-	sim2->dw1 = sim->dw1;
-	sim2->taur = sim->taur;
-	sim2->basis = sim->basis;
-	sim2->Nbasis = sim->Nbasis;
-	sim2->Nmz = sim->Nmz;
-	sim2->Hassembly = sim->Hassembly;
-	if (sim->fstart != NULL) {
-		sim2->fstart = cm_dup(sim->fstart);
-	} else {
-		sim2->fstart = NULL;
-	}
-	if (sim->fdetect != NULL) {
-		sim2->fdetect = cm_dup(sim->fdetect);
-	} else {
-		sim2->fdetect = NULL;
-	}
-	if (sim->Hiso != NULL) {
-		sim2->Hiso = blk_dm_dup(sim->Hiso);
-	} else {
-		sim2->Hiso = NULL;
-	}
-	for (i=0; i<5; i++) {
-		if (sim->HQ[i] != NULL) {
-			sim2->HQ[i] = blk_dm_dup(sim->HQ[i]);
-		} else {
-			sim2->HQ[i] = NULL;
-		}
-	}
-	strcpy(sim2->crystfile,sim->crystfile);
-	strcpy(sim2->targetcrystfile,sim->targetcrystfile);
-	strcpy(sim2->rfproffile,sim->rfproffile);
-	strcpy(sim2->pulsename,sim->pulsename);
-	strcpy(sim2->parname,sim->parname);
-	if (sim->perm_table != NULL) {
-		sim2->perm_table = (int**)malloc(sim->Nbasis*sim->Nbasis*sizeof(int*));
-		for (i=0; i< (sim->Nbasis*sim->Nbasis); i++) {
-			if (sim->perm_table[i] != NULL) {
-				sim2->perm_table[i] = iv_dup(sim->perm_table[i]);
-			} else {
-				sim2->perm_table[i] = NULL;
-			}
-		}
-	} else {
-		sim2->perm_table = NULL;
-	}
-	if (sim->dims_table != NULL) {
-		sim2->dims_table = (int**)malloc(sim->Nbasis*sizeof(int*));
-		for (i=0; i<sim->Nbasis; i++) {
-			if (sim->dims_table[i] != NULL) {
-				sim2->dims_table[i] = iv_dup(sim->dims_table[i]);
-			} else {
-				sim2->dims_table[i] = NULL;
-			}
-		}
-	} else {
-		sim2->dims_table = NULL;
-	}
-
-	sim2->CS = (Shift**)malloc(sim->nCS*sizeof(Shift*));
-	for (i=0; i<sim2->nCS; i++) {
-		Shift *ptr = sim2->CS[i] = (Shift*)malloc(sizeof(Shift));
-		ptr->nuc = sim->CS[i]->nuc;
-		ptr->iso = sim->CS[i]->iso;
-		ptr->delta = sim->CS[i]->delta;
-		ptr->eta = sim->CS[i]->eta;
-		ptr->pas[0] = sim->CS[i]->pas[0];
-		ptr->pas[1] = sim->CS[i]->pas[1];
-		ptr->pas[2] = sim->CS[i]->pas[2];
-		if (sim->CS[i]->T != NULL) {
-			ptr->T = dm_dup(sim->CS[i]->T);
-		} else {
-			ptr->T = NULL;
-		}
-		if (sim->CS[i]->Rmol != NULL) {
-			ptr->Rmol = cv_dup(sim->CS[i]->Rmol);
-		} else {
-			ptr->Rmol = NULL;
-		}
-	}
-
-	sim2->J = (Jcoupling**)malloc(sim->nJ*sizeof(Jcoupling*));
-	for (i=0; i<sim2->nJ; i++) {
-		Jcoupling *ptr = sim2->J[i] = (Jcoupling*)malloc(sizeof(Jcoupling));
-		ptr->nuc[0] = sim->J[i]->nuc[0];
-		ptr->nuc[1] = sim->J[i]->nuc[1];
-		ptr->iso = sim->J[i]->iso;
-		ptr->delta = sim->J[i]->delta;
-		ptr->eta = sim->J[i]->eta;
-		ptr->pas[0] = sim->J[i]->pas[0];
-		ptr->pas[1] = sim->J[i]->pas[0];
-		ptr->pas[2] = sim->J[i]->pas[0];
-		if (sim->J[i]->blk_T != NULL){
-			ptr->blk_T = blk_dm_dup(sim->J[i]->blk_T);
-		} else {
-			ptr->blk_T = NULL;
-		}
-		if (sim->J[i]->blk_Tiso != NULL) {
-			ptr->blk_Tiso = blk_dm_dup(sim->J[i]->blk_Tiso);
-		} else {
-			ptr->blk_Tiso = NULL;
-		}
-		if (sim->J[i]->Rmol != NULL) {
-			ptr->Rmol = cv_dup(sim->J[i]->Rmol);
-		} else {
-			ptr->Rmol = NULL;
-		}
-	}
-
-	sim2->DD = (Dipole**)malloc(sim->nDD*sizeof(Dipole*));
-	for (i=0; i<sim2->nDD; i++) {
-		Dipole *ptr = sim2->DD[i] = (Dipole*)malloc(sizeof(Dipole));
-		ptr->nuc[0] = sim->DD[i]->nuc[0];
-		ptr->nuc[1] = sim->DD[i]->nuc[1];
-		ptr->delta = sim->DD[i]->delta;
-		ptr->eta = sim->DD[i]->eta;
-		ptr->pas[0] = sim->DD[i]->pas[0];
-		ptr->pas[1] = sim->DD[i]->pas[1];
-		ptr->pas[2] = sim->DD[i]->pas[2];
-		if (sim->DD[i]->blk_T != NULL) {
-			ptr->blk_T = blk_dm_dup(sim->DD[i]->blk_T);
-		} else {
-			ptr->blk_T = NULL;
-		}
-		ptr->Rmol = cv_dup(sim->DD[i]->Rmol);
-	}
-
-	sim2->Q = (Quadrupole**)malloc(sim->nQ*sizeof(Quadrupole*));
-	for (i=0; i<sim2->nQ; i++) {
-		Quadrupole *ptr = sim2->Q[i] = (Quadrupole*)malloc(sizeof(Quadrupole));
-		ptr->nuc = sim->Q[i]->nuc;
-		ptr->order = sim->Q[i]->order;
-		ptr->w0 = sim->Q[i]->w0;
-		ptr->wq = sim->Q[i]->wq;
-		ptr->eta = sim->Q[i]->eta;
-		ptr->pas[0] = sim->Q[i]->pas[0];
-		ptr->pas[1] = sim->Q[i]->pas[1];
-		ptr->pas[2] = sim->Q[i]->pas[2];
-		if (sim->Q[i]->T != NULL) {
-			ptr->T = dm_dup(sim->Q[i]->T);
-		} else {
-			ptr->T = NULL;
-		}
-		if (sim->Q[i]->Ta != NULL) {
-			ptr->Ta = dm_dup(sim->Q[i]->Ta);
-		} else {
-			ptr->Ta = NULL;
-		}
-		if (sim->Q[i]->Tb != NULL) {
-			ptr->Tb = dm_dup(sim->Q[i]->Tb);
-		} else {
-			ptr->Tb = NULL;
-		}
-		ptr->Rmol = cv_dup(sim->Q[i]->Rmol);
-	}
-
-	sim2->MIX = (Mixing**)malloc(sim->nMIX*sizeof(Mixing*));
-	for (i=0; i<sim2->nMIX; i++) {
-		Mixing *ptr = sim2->MIX[i] = (Mixing*)malloc(sizeof(Mixing));
-		ptr->type = sim->MIX[i]->type;
-		ptr->couple[0] = sim->MIX[i]->couple[0];
-		ptr->couple[1] = sim->MIX[i]->couple[1];
-		ptr->idx = sim->MIX[i]->idx;
-		ptr->qidx = sim->MIX[i]->qidx;
-		ptr->T = dm_dup(sim->MIX[i]->T);
-		if (sim->MIX[i]->Ta != NULL) {
-			ptr->Ta = blk_dm_dup(sim->MIX[i]->Ta);
-		} else {
-			ptr->Ta = NULL;
-		}
-		if (sim->MIX[i]->Tb != NULL) {
-			ptr->Tb = blk_dm_dup(sim->MIX[i]->Tb);
-		} else {
-			ptr->Tb = NULL;
-		}
-	}
-
-	sim2->ss=(SpinSys*)malloc(sizeof(SpinSys));
-	if (sim2->ss == NULL) {
-		fprintf(stderr,"Error: sim_duplicate - can not allocate SpinSys\n");
-		exit(1);
-	}
-	sim2->ss->nchan = sim->ss->nchan;
-	sim2->ss->matdim = sim->ss->matdim;
-	sim2->ss->nspins = sim->ss->nspins;
-	for (i=1; i<=sim2->ss->nspins; i++) sim2->ss->iso[i] = sim->ss->iso[i];
-	for (i=1; i<=sim2->ss->nchan; i++) {
-		sim2->ss->nchanelem[i] = sim->ss->nchanelem[i];
-		strcpy(sim2->ss->channames[i],sim->ss->channames[i]);
-		for (j=1; j<=sim2->ss->nchanelem[i]; j++) sim2->ss->chan[i][j] = sim->ss->chan[i][j];
-	}
-
-	return sim2;
-}
-***/
-
 Sim_wsp * wsp_initialize(Sim_info *s)
 {
 	Sim_wsp * wsp;
-	int i, j, k, nchan, nspins, matdim = s->matdim;
+	int i, j, k, nchan, nspins, NN, matdim = s->matdim;
 	mat_double *dmx;
 
 	DEBUGPRINT("wsp_initialize start\n");
@@ -970,7 +841,8 @@ Sim_wsp * wsp_initialize(Sim_info *s)
 		exit(1);
 	}
 	/* fid */
-	wsp->fid = complx_vector(s->ntot);
+	NN = (s->Nfstart > s->Nfdetect ? s->Nfstart : s->Nfdetect);
+	wsp->fid = complx_vector(s->ntot*NN);
 	cv_zero(wsp->fid);
 	wsp->curr_nsig = 0;
 	/* interaction data */
@@ -1114,9 +986,16 @@ Sim_wsp * wsp_initialize(Sim_info *s)
     	wsp->STO[i] = NULL;
     	wsp->matrix[i] = NULL;
     }
-    wsp->fstart = s->fstart;
-    wsp->fdetect = s->fdetect;
-    wsp->sigma = NULL;
+    //wsp->fstart = s->fstart;
+    wsp->fstart = (mat_complx**)malloc(s->Nfstart*sizeof(mat_complx*));
+    wsp->sigma  = (mat_complx**)malloc(s->Nfstart*sizeof(mat_complx*));
+    for (i=0; i<s->Nfstart; i++) {
+    	wsp->fstart[i] = s->fstart[i];
+    	wsp->sigma[i] = NULL;
+    }
+    //wsp->fdetect = s->fdetect;
+    wsp->fdetect = (mat_complx**)malloc(s->Nfdetect*sizeof(mat_complx*));
+    for (i=0; i<s->Nfdetect; i++) wsp->fdetect[i] = s->fdetect[i];
     wsp->Nacq = s->np;
     wsp->acqphase = 0;
 	wsp->evalmode = EM_NORMAL;
@@ -1125,14 +1004,20 @@ Sim_wsp * wsp_initialize(Sim_info *s)
 	if (OCpar.isinit) {
 		wsp->OC_propstatus = 0;
 		wsp->OC_mxpos = 0;
+		wsp->OC_dens = (mat_complx**)malloc(MAXOCPROPS*s->Nfstart*sizeof(mat_complx*));
 		for (i=0; i<MAXOCPROPS; i++) {
-			wsp->OC_dens[i] = NULL;
+			//wsp->OC_dens[i] = NULL;
 			wsp->OC_props[i] = NULL;
 			wsp->OC_mxcode[i] = NULL;
 			for (j=0; j<MAXOCSHAPES*2; j++) {
 				wsp->OC_deriv[i][j] = NULL;
 			}
 		}
+		for (i=0; i<s->Nfstart*MAXOCPROPS; i++) {
+			wsp->OC_dens[i] = NULL;
+		}
+		wsp->OC_phivals = complx_vector(NN);
+		cv_zero(wsp->OC_phivals);
 	}
 
 	/* parametrs for spinach */
@@ -1228,9 +1113,18 @@ void wsp_destroy(Sim_info *s, Sim_wsp *wsp)
 
 	DEBUGPRINT("wsp_destroy start\n");
 
-    if (wsp->fdetect != s->fdetect) free_complx_matrix(wsp->fdetect);
-    if (wsp->fstart != s->fstart) free_complx_matrix(wsp->fstart);
-    if (wsp->sigma) free_complx_matrix(wsp->sigma);
+    //if (wsp->fdetect != s->fdetect) free_complx_matrix(wsp->fdetect);
+    //if (wsp->fstart != s->fstart) free_complx_matrix(wsp->fstart);
+	for (i=0; i<s->Nfstart; i++) {
+		if (wsp->fstart[i] != s->fstart[i]) free_complx_matrix(wsp->fstart[i]);
+		if (wsp->sigma[i] != NULL) free_complx_matrix(wsp->sigma[i]);
+	}
+	free(wsp->fstart);
+    free(wsp->sigma);
+	for (i=0; i<s->Nfdetect; i++) {
+		if (wsp->fdetect[i] != s->fdetect[i]) free_complx_matrix(wsp->fdetect[i]);
+	}
+	free(wsp->fdetect);
     free_complx_vector(wsp->fid);
 
 	for (i=0; i<s->nCS; i++) {
@@ -1310,7 +1204,7 @@ void wsp_destroy(Sim_info *s, Sim_wsp *wsp)
 	/* Optimal control related */
     if (OCpar.isinit) {
     	for (i=0; i<MAXOCPROPS; i++) {
-    		if (wsp->OC_dens[i]) free_complx_matrix(wsp->OC_dens[i]);
+    		//if (wsp->OC_dens[i]) free_complx_matrix(wsp->OC_dens[i]);
     		if (wsp->OC_props[i]) free_blk_mat_complx(wsp->OC_props[i]);
     		if (wsp->OC_mxcode[i]) free(wsp->OC_mxcode[i]);
 			for (j=0; j<MAXOCSHAPES*2; j++) {
@@ -1318,6 +1212,11 @@ void wsp_destroy(Sim_info *s, Sim_wsp *wsp)
 			}
 
     	}
+    	for (i=0; i<s->Nfstart*MAXOCPROPS; i++) {
+    		if (wsp->OC_dens[i]) free_complx_matrix(wsp->OC_dens[i]);
+    	}
+    	free(wsp->OC_dens);
+    	free_complx_vector(wsp->OC_phivals);
     }
 	/* parametrs for spinach */
     if (wsp->spinach_delay_Nsub > 0) {
@@ -1678,6 +1577,21 @@ void sim_preempty_interpol(Sim_info *sim)
 	}
 }
 
+/* fid is with 1-based indexing!!! */
+void sim_conjfid(complx *fid, Sim_info* sim)
+{
+	int i, N, NN;
+
+	N = (sim->Nfstart > sim->Nfdetect ? sim->Nfstart : sim->Nfdetect);
+	NN = sim->ntot;
+	for (i=0; i<N; i++) {
+		if (sim->conjugate_fid[i]) {
+			 cv_conj2(fid+1+i*NN,NN);
+		}
+	}
+}
+
+
 /****
  * calculates pulse sequence response without any interpolations
  */
@@ -1697,7 +1611,8 @@ int sim_calcfid(Sim_info *s, Sim_wsp *wsp)
       }
 	  wsp->dt_gcompute = s->taur/(double)s->ngamma;
       gcompute_fid(s,wsp);
-      if (s->conjugate_fid) cv_conj(wsp->fid);
+      //if (s->conjugate_fid) cv_conj(wsp->fid);
+      sim_conjfid(wsp->fid,s);
 	  break;
   case M_GCOMPUTE_FREQ:
       if ( s->relax ) {
@@ -1720,7 +1635,8 @@ int sim_calcfid(Sim_info *s, Sim_wsp *wsp)
         wsp->cryst.gamma += 360.0/(double)s->ngamma;
       }
       cv_muld(wsp->fid, 1.0/(double)(s->ngamma));
-      if (s->conjugate_fid) cv_conj(wsp->fid);
+      //if (s->conjugate_fid) cv_conj(wsp->fid);
+      sim_conjfid(wsp->fid,s);
       break;
   case M_DIRECT_FREQ:
 	  wsp->dt_gcompute = 1e99;
@@ -1749,7 +1665,8 @@ int sim_calcfid(Sim_info *s, Sim_wsp *wsp)
         wsp->cryst.gamma += 360.0/(double)s->ngamma;
       }
       cv_muld(wsp->fid, 1.0/(double)(s->ngamma));
-      if (s->conjugate_fid) cv_conj(wsp->fid);
+      //if (s->conjugate_fid) cv_conj(wsp->fid);
+      sim_conjfid(wsp->fid,s);
       break;
   default:
 	  fprintf(stderr,"Error: sim_calcfid - imethod (%d) not recognized\n",s->imethod);

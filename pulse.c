@@ -64,6 +64,8 @@
 
 void direct_propagate(Sim_info *sim, Sim_wsp *wsp)
 {
+	int i;
+
 	DEBUGPRINT("direct_propagate start\n");
   /* enable all interactions, turn off offset and undo other possible remainders from previous pulseq calls) */
   ham_turnon(sim,wsp,"all");
@@ -76,18 +78,22 @@ void direct_propagate(Sim_info *sim, Sim_wsp *wsp)
   // optim. tip: fstart and fdetect are not usually changed in pulseq
   // use sim pointers and do not copy
   // commands changing them will create new matrices if necessary
-  if (wsp->fstart != sim->fstart) {
-	  free_complx_matrix(wsp->fstart);
-	  wsp->fstart = sim->fstart;
+  for (i=0; i<sim->Nfstart; i++) {
+	  if (wsp->fstart[i] != sim->fstart[i]) {
+		  free_complx_matrix(wsp->fstart[i]);
+		  wsp->fstart[i] = sim->fstart[i];
+	  }
+	  if (wsp->sigma[i] == NULL)
+		  wsp->sigma[i] = cm_dup(wsp->fstart[i]);
+	  else
+		  cm_copy(wsp->sigma[i],wsp->fstart[i]);
   }
-  if (wsp->fdetect != sim->fdetect) {
-	  free_complx_matrix(wsp->fdetect);
-	  wsp->fdetect = sim->fdetect;
+  for (i=0; i<sim->Nfdetect; i++) {
+	  if (wsp->fdetect[i] != sim->fdetect[i]) {
+		  free_complx_matrix(wsp->fdetect[i]);
+		  wsp->fdetect[i] = sim->fdetect[i];
+	  }
   }
-  if (wsp->sigma == NULL)
-	  wsp->sigma = cm_dup(wsp->fstart);
-  else
-	  cm_copy(wsp->sigma,wsp->fstart);
 
   wsp->Uisunit=1;
   wsp->isselectivepulse=0;
@@ -130,11 +136,11 @@ mat_complx * get_matrix_1(Sim_info *sim, Sim_wsp *wsp,char* name)
     }
     m = wsp->matrix[num];
   } else if (!strcmp(name,"start")) {
-	  m = wsp->fstart;
+	  m = wsp->fstart[0];
   } else if (!strcmp(name,"detect")) {
-	  m = wsp->fdetect;
+	  m = wsp->fdetect[0];
   } else if (!strcmp(name,"density")) {
-	  m = wsp->sigma;
+	  m = wsp->sigma[0];
   } else if (!strcmp(name,"propagator")) {
       //m = wsp->U;
 	  //blk_cm_print(wsp->U,"get_matrix PROP");
@@ -424,7 +430,16 @@ void _evolve_with_prop(Sim_info *sim, Sim_wsp *wsp)
 	  //printf("\n=== _evolve_with_prop ===\n");
 	  //cm_print(wsp->sigma,"initial sigma");
 	  //blk_cm_print(wsp->U,"propagator");
-	 blk_simtrans(wsp->sigma,wsp->U,sim);
+	  int i;
+	  for (i=0; i<sim->Nfstart; i++) {
+		  // basis compatibility check
+		  if (wsp->sigma[i]->basis != wsp->U->basis) {
+			  mat_complx *dum = cm_change_basis_2(wsp->sigma[i],wsp->U->basis,sim);
+			  free_complx_matrix(wsp->sigma[i]);
+			  wsp->sigma[i] = dum;
+		  }
+		  blk_simtrans(wsp->sigma[i],wsp->U,sim);
+	  }
 	  //cm_print(wsp->sigma,"resulting sigma");
 	  //printf("    ======\n\n");
   }
@@ -432,7 +447,9 @@ void _evolve_with_prop(Sim_info *sim, Sim_wsp *wsp)
 
 void _reset(Sim_info *sim, Sim_wsp *wsp, double tstartincr_usec)
 {
-  cm_copy(wsp->sigma,wsp->fstart);
+  int i;
+  for (i=0; i<sim->Nfstart; i++)
+	  cm_copy(wsp->sigma[i],wsp->fstart[i]);
   wsp->t = wsp->tstart + tstartincr_usec;
   _reset_prop(sim,wsp);
   if (wsp->offset) {
@@ -446,6 +463,7 @@ void _reset(Sim_info *sim, Sim_wsp *wsp, double tstartincr_usec)
 void _filter(Sim_info *sim, Sim_wsp *wsp, int num)
 {
   mat_complx *mask;
+  int i;
 
   mask = wsp->matrix[num];
   if (!mask) {
@@ -463,7 +481,8 @@ void _filter(Sim_info *sim, Sim_wsp *wsp, int num)
   _reset_prop(sim,wsp);
   //DEBUGPRINT("_filter 3: ham dim %d, type '%s'\n",wsp->ham->row, matrix_type(wsp->ham->type));
   wsp->cannotbestored=1;
-  cm_filter(wsp->sigma, mask);
+  for (i=0; i<sim->Nfstart; i++)
+	  cm_filter(wsp->sigma[i], mask);
   //DEBUGPRINT("_filter 4: ham dim %d, type '%s'\n",wsp->ham->row, matrix_type(wsp->ham->type));
 }
 
@@ -568,54 +587,123 @@ void _prop(Sim_info *sim, Sim_wsp *wsp, int num,int ntimes)
 }
 
 
-void _acq(Sim_info *sim, Sim_wsp *wsp, double phase)
+void _acq(Sim_info *sim, Sim_wsp *wsp, double phase, int do_reset)
 {
-  complx z, *ptr;
+  complx z, phfac, *ptr;
+  int i, is, id, NN;
   
-  if (wsp->curr_nsig + 1 > LEN(wsp->fid)) {
+  NN = (sim->Nfstart > sim->Nfdetect ? sim->Nfstart : sim->Nfdetect);
+  if (wsp->curr_nsig + 1 > sim->ntot) {
     fprintf(stderr,"error: acq overflow in fid points\n");
     exit(1);
+  }
+  (wsp->curr_nsig)++;
+  if (fabs(phase)>TINY) {
+	  phfac.re = cos(phase*DEG2RAD);
+	  phfac.im = sin(phase*DEG2RAD);
+  } else {
+	  phfac = Cnull;
   }
   /* in relaxation mode rho is already evolved */
   if (!(sim->relax)) {
      _evolve_with_prop(sim,wsp);
   }
-  _reset_prop(sim,wsp);
+  if (do_reset) _reset_prop(sim,wsp);
 
-  ptr = &(wsp->fid[++(wsp->curr_nsig)]);
-  if (sim->acq_adjoint == 0) {
-    z = cm_trace(wsp->fdetect,wsp->sigma);
-  } else {
-    z = cm_trace_adjoint(wsp->fdetect,wsp->sigma);
+  /*** would this work??? ***/
+  for (i=0; i<NN; i++) {
+	  is = i % sim->Nfstart;
+	  id = i % sim->Nfdetect;
+	  // basis compatibility check
+	  if (wsp->fdetect[id]->basis != wsp->sigma[is]->basis) {
+		  mat_complx *dum = cm_change_basis_2(wsp->fdetect[i],wsp->sigma[is]->basis,sim);
+		  if (wsp->fdetect[id] != sim->fdetect[id]) free_complx_matrix(wsp->fdetect[id]);
+		  wsp->fdetect[id] = dum;
+	  }
+	  if (sim->acq_adjoint == 0) {
+		  z = cm_trace(wsp->fdetect[id],wsp->sigma[is]);
+	  } else {
+		  z = cm_trace_adjoint(wsp->fdetect[id],wsp->sigma[is]);
+	  }
+	  ptr = &(wsp->fid[wsp->curr_nsig+i*sim->ntot]);
+	  if (fabs(phase) > TINY) {
+	      ptr->re += phfac.re*z.re+phfac.im*z.im;
+	      ptr->im += -phfac.im*z.re+phfac.re*z.im;
+	  } else {
+		  ptr->re += z.re;
+		  ptr->im += z.im;
+	  }
   }
 
-  if (phase != 0.0) {
-      double cosph,sinph;
-      phase *= DEG2RAD;
-      cosph=cos(phase);
-      sinph=sin(phase);
-      ptr->re += cosph*z.re+sinph*z.im;
-      ptr->im += -sinph*z.re+cosph*z.im;
+/****
+  if (sim->Nfstart == sim->Nfdetect ) {
+	  for (i=0; i<sim->Nfstart; i++) {
+		  if (sim->acq_adjoint == 0) {
+			  z = cm_trace(wsp->fdetect[i],wsp->sigma[i]);
+		  } else {
+			  z = cm_trace_adjoint(wsp->fdetect[i],wsp->sigma[i]);
+		  }
+		  ptr = &(wsp->fid[wsp->curr_nsig+i*sim->ntot]);
+		  if (fabs(phase) > TINY) {
+		      ptr->re += phfac.re*z.re+phfac.im*z.im;
+		      ptr->im += -phfac.im*z.re+phfac.re*z.im;
+		  } else {
+			  ptr->re += z.re;
+			  ptr->im += z.im;
+		  }
+	  }
+  } else if (sim->Nfstart == 1) {
+	  for (i=0; i<sim->Nfdetect; i++) {
+		  if (sim->acq_adjoint == 0) {
+			  z = cm_trace(wsp->fdetect[i],wsp->sigma[0]);
+		  } else {
+			  z = cm_trace_adjoint(wsp->fdetect[i],wsp->sigma[0]);
+		  }
+		  ptr = &(wsp->fid[wsp->curr_nsig+i*sim->ntot]);
+		  if (fabs(phase) > TINY) {
+		      ptr->re += phfac.re*z.re+phfac.im*z.im;
+		      ptr->im += -phfac.im*z.re+phfac.re*z.im;
+		  } else {
+			  ptr->re += z.re;
+			  ptr->im += z.im;
+		  }
+	  }
   } else {
-	  ptr->re += z.re;
-	  ptr->im += z.im;
+	  assert(sim->Nfdetect == 1);
+	  for (i=0; i<sim->Nfstart; i++) {
+		  if (sim->acq_adjoint == 0) {
+			  z = cm_trace(wsp->fdetect[0],wsp->sigma[i]);
+		  } else {
+			  z = cm_trace_adjoint(wsp->fdetect[0],wsp->sigma[i]);
+		  }
+		  ptr = &(wsp->fid[wsp->curr_nsig+i*sim->ntot]);
+		  if (fabs(phase) > TINY) {
+		      ptr->re += phfac.re*z.re+phfac.im*z.im;
+		      ptr->im += -phfac.im*z.re+phfac.re*z.im;
+		  } else {
+			  ptr->re += z.re;
+			  ptr->im += z.im;
+		  }
+	  }
   }
+***/
   //printf("_acq: fid(%d) = (%f, %f) ; z = (%f, %f)\n",wsp->curr_nsig,ptr->re,ptr->im,z.re,z.im);
 }
 
 void _nacq(Sim_info *sim, Sim_wsp *wsp, int np,int num,double phase)
 {
   int k;
-  double cosph=0,sinph=0;
-  complx *ptr, z;
+//  double cosph=0,sinph=0;
+//  complx *ptr, z;
 
   if (!wsp->STO[num]) {
     fprintf(stderr,"error: illegal prop number %d\n",num);
     exit(1);
   }
-  if (wsp->curr_nsig + np > LEN(wsp->fid)) {
-    fprintf(stderr,"error: acq overflow in fid points\n");
-    exit(1);
+//  if (wsp->curr_nsig + np > LEN(wsp->fid)) {
+  if (wsp->curr_nsig + np > sim->ntot) {
+	  fprintf(stderr,"error: acq overflow in fid points\n");
+	  exit(1);
   }
 
   if (ham_ischanged(sim,wsp)) {
@@ -625,49 +713,50 @@ void _nacq(Sim_info *sim, Sim_wsp *wsp, int np,int num,double phase)
                    "Call 'reset' before using stored propagators\n");
     exit(1);
   }
-  _acq(sim,wsp,phase);
+  _acq(sim,wsp,phase,1);
 
   wsp->waspulse = wsp->STO_waspulse[num];
   blk_cm_copy(wsp->U,wsp->STO[num]);
   wsp->Uisunit = 0;
-  if (wsp->sigma->basis != wsp->U->basis) {
-	  DEBUGPRINT("_nacq : changing basis of sigma %d --> %d\n",wsp->sigma->basis,wsp->U->basis);
-	  mat_complx *dum = cm_change_basis_2(wsp->sigma,wsp->U->basis,sim);
-	  free_complx_matrix(wsp->sigma);
-	  wsp->sigma = dum;
-  }
-  if (wsp->fdetect->basis != wsp->U->basis) {
-	  DEBUGPRINT("_nacq : changing basis of fdetect %d --> %d\n",wsp->fdetect->basis,wsp->U->basis);
-	  mat_complx *dum = cm_change_basis_2(wsp->fdetect,wsp->U->basis,sim);
-	  if (wsp->fdetect != sim->fdetect) free_complx_matrix(wsp->sigma);
-	  wsp->fdetect = dum;
-  }
-  if (phase != 0.0) {
-    phase *= DEG2RAD;
-    cosph=cos(phase);
-    sinph=sin(phase);
-  }
-  ptr = &(wsp->fid[(wsp->curr_nsig)]);
+ // if (wsp->sigma->basis != wsp->U->basis) {
+//	  DEBUGPRINT("_nacq : changing basis of sigma %d --> %d\n",wsp->sigma->basis,wsp->U->basis);
+//	  mat_complx *dum = cm_change_basis_2(wsp->sigma,wsp->U->basis,sim);
+//	  free_complx_matrix(wsp->sigma);
+//	  wsp->sigma = dum;
+// }
+//  if (wsp->fdetect->basis != wsp->U->basis) {
+//	  DEBUGPRINT("_nacq : changing basis of fdetect %d --> %d\n",wsp->fdetect->basis,wsp->U->basis);
+//	  mat_complx *dum = cm_change_basis_2(wsp->fdetect,wsp->U->basis,sim);
+//	  if (wsp->fdetect != sim->fdetect) free_complx_matrix(wsp->sigma);
+//	  wsp->fdetect = dum;
+//  }
+//  if (phase != 0.0) {
+//    phase *= DEG2RAD;
+//    cosph=cos(phase);
+//    sinph=sin(phase);
+//  }
+//  ptr = &(wsp->fid[(wsp->curr_nsig)]);
   for (k=2;k<=np;k++) {
 	  check_prop_reuse(sim,wsp,num);
 	  //DEBUGPRINT("_nacq: wsp->t = %f, proplength=%f\n",wsp->t,wsp->STO_tproplength_usec[num]);
       wsp->t += wsp->STO_tproplength_usec[num];
       //DEBUGPRINT("_nacq: k=%d, wsp->t=%f\n",k,wsp->t);
-      _evolve_with_prop(sim,wsp);
-      ptr++; (wsp->curr_nsig)++;
-      if (sim->acq_adjoint == 0) {
-        z = cm_trace(wsp->fdetect,wsp->sigma);
-      } else {
-        z = cm_trace_adjoint(wsp->fdetect,wsp->sigma);
-      }
+      //_evolve_with_prop(sim,wsp);
+      _acq(sim,wsp,phase,0);
+      //      ptr++; (wsp->curr_nsig)++;
+//      if (sim->acq_adjoint == 0) {
+//        z = cm_trace(wsp->fdetect,wsp->sigma);
+//      } else {
+//        z = cm_trace_adjoint(wsp->fdetect,wsp->sigma);
+//      }
   
-      if (phase != 0.0) {
-          ptr->re += cosph*z.re+sinph*z.im;
-          ptr->im += -sinph*z.re+cosph*z.im;
-      } else {
-    	  ptr->re += z.re;
-    	  ptr->im += z.im;
-      }
+//      if (phase != 0.0) {
+//          ptr->re += cosph*z.re+sinph*z.im;
+//          ptr->im += -sinph*z.re+cosph*z.im;
+//      } else {
+//    	  ptr->re += z.re;
+//    	  ptr->im += z.im;
+//      }
       //DEBUGPRINT("_nacq: fid(%d) = (%f, %f)\n",wsp->curr_nsig,ptr->re,ptr->im);
       //if (k==10) exit(1);
   }
@@ -1126,7 +1215,7 @@ int tclAcq(ClientData data,Tcl_Interp* interp,int argc, Tcl_Obj *argv[])
     if (Tcl_GetIntFromObj(interp,argv[2],&prop) != TCL_OK) return TCL_ERROR;
     _nacq(sim,wsp,np,prop,phase);
   } else {
-    _acq(sim,wsp,phase);
+    _acq(sim,wsp,phase,1);
   }
   return TCL_OK;
 }
@@ -1156,7 +1245,7 @@ int tclEvolve(ClientData data,Tcl_Interp* interp,int argc, Tcl_Obj *argv[])
      store_OCprop(wsp);
      _evolve_with_prop(sim,wsp);
      _reset_prop(sim,wsp);
-     store_OCdens(wsp);
+     store_OCdens(sim,wsp);
      set_OCmx_code(wsp,"P");
   } else {
      /* no, do usual things */  
@@ -1967,15 +2056,15 @@ int tclMatrix(ClientData data,Tcl_Interp* interp,int argc, char *argv[])
         fprintf(stderr,"error: 'matrix set start': matrix %d must be a %dx%d matrix\n",num,sim->matdim,sim->matdim);
         exit(1);
       }
-      if (wsp->fstart != sim->fstart) free_complx_matrix(wsp->fstart);
-      wsp->fstart = m;
+      if (wsp->fstart[0] != sim->fstart[0]) free_complx_matrix(wsp->fstart[0]);
+      wsp->fstart[0] = m;
     } else if (!strcmp(argv[arg],"detect")) {
       if (m->row != sim->matdim  || m->col != sim->matdim ) {
         fprintf(stderr,"error: 'matrix set detect': matrix %d must be a %dx%d matrix\n",num,sim->matdim,sim->matdim);
         exit(1);
       }
-      if (wsp->fdetect != sim->fdetect) free_complx_matrix(wsp->fdetect);
-      wsp->fdetect = m;
+      if (wsp->fdetect[0] != sim->fdetect[0]) free_complx_matrix(wsp->fdetect[0]);
+      wsp->fdetect[0] = m;
     } else {
       return TclError(interp,"error: first argument to 'matrix set' must be <number>, 'start' or 'detect', "
                            "but not '%s'\n",argv[arg]);
@@ -2436,7 +2525,8 @@ int tclAcqBlock(ClientData data,Tcl_Interp* interp,int objc, Tcl_Obj *objv[])
 	}
 
 	if (np<0) np = sim->np;
-	if (wsp->curr_nsig + np > LEN(wsp->fid))
+//	if (wsp->curr_nsig + np > LEN(wsp->fid))
+	if (wsp->curr_nsig + np > sim->ntot)
 		return TclError(interp,"Error: acq_block - acq overflow in fid points\n");
 
 	wsp->Nacq = np;
