@@ -195,15 +195,15 @@ Sim_info * sim_initialize(Tcl_Interp* interp)
 		  } else if (!strncmp(buf,"block_diag",10)) {
 			  s->block_diag = 1;
 		  } else if (!strncmp(buf,"FWTinterpolation",9)) {
-			  s->interpolation = INTERPOL_FWT_ALL;
-		  } else if (!strncmp(buf,"FWT2interpolation",10)) {
 			  s->interpolation = INTERPOL_FWT_LAM;
+		  } else if (!strncmp(buf,"FWT2interpolation",10)) {
+			  s->interpolation = INTERPOL_FWT_ALL;
 		  } else if (!strncmp(buf,"ASGinterpolation",9)) {
 			  s->interpolation = INTERPOL_ASG;
 		  } else if (!strncmp(buf,"FWTASGinterpolation",12)) {
-			  s->interpolation = INTERPOL_FWTASG_ALL;
-		  } else if (!strncmp(buf,"FWT2ASGinterpolation",12)) {
 			  s->interpolation = INTERPOL_FWTASG_LAM;
+		  } else if (!strncmp(buf,"FWT2ASGinterpolation",12)) {
+			  s->interpolation = INTERPOL_FWTASG_ALL;
 		  } else if (!strncmp(buf,"time",4)) {
 			  s->domain = 0;
 		  } else if (!strncmp(buf,"frequency",4)) {
@@ -334,7 +334,7 @@ Sim_info * sim_initialize(Tcl_Interp* interp)
   } else {
 	  s->targetcrdata = NULL;
   }
-  if (s->interpolation == INTERPOL_FWT_LAM || s->interpolation == INTERPOL_FWTASG_LAM) {
+  if (s->interpolation == INTERPOL_FWT_LAM || s->interpolation == INTERPOL_FWTASG_LAM || s->interpolation == INTERPOL_FWT_ALL || s->interpolation == INTERPOL_FWTASG_ALL) {
 	  // load, or create and load, map of nearest crystallites target->source
 	  s->crmap = read_cryst_map(s->crystfile, s->crdata, s->targetcrystfile, s->targetcrdata);
   } else {
