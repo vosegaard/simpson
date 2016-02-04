@@ -423,7 +423,8 @@ FD* FD_read(char* fname)
     fprintf(stderr,"FD_read: unable to read line %d from file '%s'\n",lineno,fname);
     exit(1);
   }
-  if (strcmp(buf,"SIMP\n")) {
+  // this should fix mixed line-ending errors
+  if (strcmp(buf,"SIMP\n") != 0 && strcmp(buf,"SIMP\r\n") != 0) {
     fprintf(stderr,"FD_read: invalid type of file '%s' (expected 'SIMP'), in file '%s'\n",buf,fname);
     exit(1);
   } 
