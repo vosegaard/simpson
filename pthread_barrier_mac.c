@@ -34,6 +34,7 @@ int pthread_barrier_init(pthread_barrier_t *barrier, const pthread_barrierattr_t
 
 int pthread_barrier_destroy(pthread_barrier_t *barrier)
 {
+//    printf("trying destroy_mutex\n");
     pthread_cond_destroy(&barrier->cond);
     pthread_mutex_destroy(&barrier->mutex);
     return 0;
@@ -41,6 +42,7 @@ int pthread_barrier_destroy(pthread_barrier_t *barrier)
 
 int pthread_barrier_wait(pthread_barrier_t *barrier)
 {
+//    printf("trying pthread_mutex_lock\n");
     pthread_mutex_lock(&barrier->mutex);
     ++(barrier->count);
     if(barrier->count >= barrier->tripCount)
@@ -52,8 +54,11 @@ int pthread_barrier_wait(pthread_barrier_t *barrier)
     }
     else
     {
+//        printf("succeeded pthread_mutex_lock 0\n");
         pthread_cond_wait(&barrier->cond, &(barrier->mutex));
+//        printf("succeeded pthread_mutex_lock 1\n");
         pthread_mutex_unlock(&barrier->mutex);
+//        printf("succeeded pthread_mutex_lock 2\n");
         return 0;
     }
 }

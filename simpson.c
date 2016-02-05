@@ -1055,10 +1055,14 @@ void simpson_common_work(Tcl_Interp *interp, char *state, int *ints_out, double 
 	Sim_info *sim;
 	complx *fidsum=NULL, *phivals=NULL;
     int collect_phivals = OCpar.isinit && OCpar.gradmode;
-
+    
 	/* read global simulation information */
 	sim = sim_initialize(interp);
-	/* read all averaging profiles (crystallites, rf inhom, z-averaging)*/
+
+//    printf("Interpolation: %d\n", sim->interpolation);
+
+    
+    /* read all averaging profiles (crystallites, rf inhom, z-averaging)*/
 	prepare_zaveraging(interp,&zvals,&zoffsetvals);
 	read_averaging_file(interp, sim, &avestruct, &aveweight, &Navepar, &Naveval);
 	//printf("\n\ntest ave: %d, %lg\n\n",avestruct[1].par_type,aveweight[2]);
@@ -1087,6 +1091,7 @@ void simpson_common_work(Tcl_Interp *interp, char *state, int *ints_out, double 
 		for (i=0; i<num_threads; i++) thrd.phivals[i] = complx_vector(NN);
 	}
 
+    
 	switch (sim->interpolation) {
 	case INTERPOL_NOT_USED: // no interpolation
 		/* prepare input data for threads */
@@ -1251,7 +1256,7 @@ void simpson_common_work(Tcl_Interp *interp, char *state, int *ints_out, double 
 		cv_zero(fidsum);
 		sim_prepare_interpol(sim);
 		// all averaging except powder needs to be serial
-		for (iz=1; iz<=nz; iz++) {
+        for (iz=1; iz<=nz; iz++) {
 			for (iave=0; iave<Naveval; iave++) {
 				for (irf=1; irf<=nrf; irf++) {
 					/* prepare input data for threads */

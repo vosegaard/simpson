@@ -224,6 +224,8 @@ Sim_info * sim_initialize(Tcl_Interp* interp)
 	  }  // for loop over objc
   }
   // par(method) parsed.
+    
+//    printf("Interpolation: %d\n", s->interpolation);
 #ifdef NO_NFFT
   if ( (s->interpolation != INTERPOL_NOT_USED) && (s->interpolation != INTERPOL_ASG) ) {
 	  fprintf(stderr,"Error: simpson compiled without NFFT library - FWT interpolation not possible!\n");
@@ -334,12 +336,15 @@ Sim_info * sim_initialize(Tcl_Interp* interp)
   } else {
 	  s->targetcrdata = NULL;
   }
+//    printf("Here 1\n");
   if (s->interpolation == INTERPOL_FWT_LAM || s->interpolation == INTERPOL_FWTASG_LAM || s->interpolation == INTERPOL_FWT_ALL || s->interpolation == INTERPOL_FWTASG_ALL) {
 	  // load, or create and load, map of nearest crystallites target->source
+//      printf("Crystal info: %s %s %ld %ld\n", s->crystfile, s->targetcrystfile, s->crdata, s->targetcrdata);
 	  s->crmap = read_cryst_map(s->crystfile, s->crdata, s->targetcrystfile, s->targetcrdata);
   } else {
 	  s->crmap = NULL;
   }
+//    printf("Here 2\n");
   if (s->interpolation == INTERPOL_ASG || s->interpolation == INTERPOL_FWTASG_ALL || s->interpolation == INTERPOL_FWTASG_LAM) {
 	  // test for triangle data
 	  // at the moment they are read in mpi_ASG_interpol ...

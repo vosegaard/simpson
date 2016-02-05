@@ -424,6 +424,11 @@ int * read_cryst_map(char *crystfile, Cryst *crdata, char *targetcrystfile, Crys
 		if (ver) printf("Creating crystallites NEAREST map and saving to file %s.map/.mab\n",fname);
 		strcat(fname,".map");
 		fp = fopen(fname,"w");
+        if (fp == NULL) {
+            fprintf(stderr, "Error writing to file '%s'\n\n", fname);
+            fprintf(stderr, "SIMPSON needs to create the file but cannot do so. Maybe it tries\nto access a directory which does not exist. In this case, you can manually\ncreate the directory/directories and rerun SIMPSON.\n");
+            exit(0);
+        }
 		for (i=1; i<=ntcr; i++) {
 			dmin = 1e99;
 			for (j=1; j<=ncr; j++) {
