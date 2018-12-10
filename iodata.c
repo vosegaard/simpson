@@ -62,6 +62,15 @@ typedef union {
 #define FLOATBITS_EXPADD	0x7f
 #define FLOATBITS_MANT    23
 
+void double_to_bits(double fd, char *bits) {
+   float f = 0;
+   
+   if (fd > __FLT_MIN__ && fd < __FLT_MAX__) {
+      f = (float)fd;
+   }
+   float_to_bits(f, bits);
+}
+
 void float_to_bits(float f,char* bits)
 {
    int e;
@@ -293,7 +302,7 @@ void FD_write(char* fname,FD* fd,int format,int prec)
        pack_begin(fp);
        for (i=0;i<doubles;i++) {
          int j;         
-         float_to_bits(data[i],bits);
+         double_to_bits(data[i],bits);
          for (j=0;j<4;j++) {
            if (pack_putc(bits[j],fp) == EOF) {
              fprintf(stderr,"error: FD_write: cannot write float %d\n",i);

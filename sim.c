@@ -452,6 +452,7 @@ Sim_info * sim_initialize(Tcl_Interp* interp)
     	NN = 0;
     	if (s->conjugate_fid[i] == -1) {
     		s->obs_nuc[i] = obs_nuc(s->ss,detectop,&NN);
+            //printf("Observe nucleus: %d %d %d\n", s->obs_nuc[i], NN, s->ss->nchan);
     		if ( (s->obs_nuc[i] < 1) || (NN && s->ss->nchan > 1) ) {
     			fprintf(stderr,"error: in detect-operator '%s'. \nNone or more than one type of nucleus was detected. \n"
     					"Set 'conjugate_fid' to 'true' or 'false' to turn off\n"
@@ -1604,6 +1605,7 @@ int sim_calcfid(Sim_info *s, Sim_wsp *wsp)
 {
   int ig;
 
+    //printf("Angles: %g %g %g %g\n", wsp->cryst.alpha, wsp->cryst.beta, wsp->cryst.gamma, wsp->cryst.weight);
   wsp->cryst.gamma += s->gamma_zero;
   ham_rotate(s,wsp);
   cv_zero(wsp->fid);

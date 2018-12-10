@@ -266,7 +266,7 @@ void TclSetSignalHandler(Tcl_Interp* interp,char* function)
 #endif
 }
 
-#define BUFLEN 1024
+#define BUFLEN 16384
 
 int TclAppendMatrix(Tcl_Interp* interp,mat_complx * m)
 {
