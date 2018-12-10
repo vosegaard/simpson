@@ -65,7 +65,7 @@ typedef union {
 void double_to_bits(double fd, char *bits) {
    float f = 0;
    
-   if (fd > __FLT_MIN__ && fd < __FLT_MAX__) {
+   if ((fd > __FLT_MIN__ && fd < __FLT_MAX__) || (-fd > __FLT_MIN__ && -fd < __FLT_MAX__)) {
       f = (float)fd;
    }
    float_to_bits(f, bits);
@@ -300,6 +300,7 @@ void FD_write(char* fname,FD* fd,int format,int prec)
        doubles=ntot*2;
        data = &(fd->data)[1].re;
        pack_begin(fp);
+       
        for (i=0;i<doubles;i++) {
          int j;         
          double_to_bits(data[i],bits);
