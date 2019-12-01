@@ -2231,7 +2231,7 @@ int tclEulerAngles(ClientData data,Tcl_Interp* interp,int argc, Tcl_Obj *argv[])
   read_sim_pointers(interp, &sim, &wsp);
 
   if (argc != 1)
-    return TclError(interp,"Usage: {alpha beta gamma} eulerangles");
+    return TclError(interp,"Usage: {alpha beta gamma weight} eulerangles");
   
   Tcl_ResetResult(interp);
 
@@ -2240,6 +2240,8 @@ int tclEulerAngles(ClientData data,Tcl_Interp* interp,int argc, Tcl_Obj *argv[])
   sprintf(buf, "%g", wsp->cryst.beta);
   Tcl_AppendElement(interp, buf);
   sprintf(buf, "%g", wsp->cryst.gamma);
+  Tcl_AppendElement(interp, buf);
+  sprintf(buf, "%g", wsp->cryst.weight);
   Tcl_AppendElement(interp, buf);
   return TCL_OK;
 }
